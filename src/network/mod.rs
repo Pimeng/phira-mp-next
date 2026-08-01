@@ -1,0 +1,33 @@
+//! 网络层（对应文档 2、5.4、7.5 节）。
+//!
+//! - 握手：1 字节协议版本 0x01，5 秒超时。
+//! - 帧：VarInt 长度前缀（见 `frame` 模块）。
+//! - 每连接串行处理：读循环按序把包交给当前 `PacketHandler`。
+//! - Handler 链：AuthenticateHandler → PlayHandler → RoomHandler（take/put 模式）。
+
+pub mod auth;
+pub mod connection;
+pub mod handler;
+pub mod play;
+pub mod proxy;
+pub mod room_handler;
+
+use tokio::net::TcpStream;
+
+/// 协议版本（仅 0x01 受支持）。
+pub const PROTOCOL_VERSION: u8 = 0x01;
+
+/// 握手/读取超时。
+pub const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+pub const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+pub use connection::{spawn_connection, ConnectionHandle};
+
+/// 已接受的 TCP 连接的服务端处理入口（由 server 模块调用）。
+pub async fn handle_connection(
+    stream: TcpStream,
+    ctx: std::sync::Arc<crate::server::ServerContext>,
+    proxy_protocol: bool,
+) {
+    connection::spawn_connection(stream, ctx, proxy_protocol).await;
+}
