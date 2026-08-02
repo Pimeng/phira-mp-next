@@ -46,10 +46,10 @@ impl ConnectionReference {
         std::mem::replace(&mut *self.inner.write().unwrap(), new_conn)
     }
 
-    /// 仅当当前连接 id 匹配时替换（防旧连接的清理覆盖新连接）。
-    pub fn compare_exchange(&self, expect_id: u64, new_conn: ConnectionHandle) -> bool {
+    /// 仅当当前连接与期望连接是同一实例时替换（防旧连接的清理覆盖新连接）。
+    pub fn compare_exchange(&self, expect: &ConnectionHandle, new_conn: ConnectionHandle) -> bool {
         let mut g = self.inner.write().unwrap();
-        if g.id() == expect_id {
+        if g.same_connection(expect) {
             *g = new_conn;
             true
         } else {
@@ -94,8 +94,8 @@ pub trait Player: Send + Sync + 'static {
 
     // ---- 连接/生命周期钩子（默认实现；自定义玩家按需覆写） ----
 
-    /// 当前绑定连接 id（无连接的实现返回 None）。
-    fn connection_id(&self) -> Option<u64> {
+    /// 当前绑定的连接句柄（无连接的实现返回 None）。
+    fn bound_connection(&self) -> Option<ConnectionHandle> {
         None
     }
 
@@ -246,8 +246,8 @@ impl Player for LocalPlayer {
         self.extensions.read().unwrap().get(&type_id).cloned()
     }
 
-    fn connection_id(&self) -> Option<u64> {
-        Some(self.connection().id())
+    fn bound_connection(&self) -> Option<ConnectionHandle> {
+        Some(self.connection())
     }
 
     fn is_online(&self) -> bool {
@@ -405,7 +405,7 @@ impl PlayerRegistry {
                 Some(existing) => {
                     let same_conn = conn
                         .as_ref()
-                        .map(|c| existing.connection_id() == Some(c.id()))
+                        .map(|c| existing.bound_connection().map_or(false, |b| b.same_connection(c)))
                         .unwrap_or(false);
                     if same_conn {
                         // 同一连接重复认证（不应发生）
@@ -446,9 +446,8 @@ impl PlayerRegistry {
         let existing = self.players.lock().unwrap().get(&info.id).cloned();
         if let Some(p) = &existing {
             let online = p.is_online()
-                && p.connection_id()
-                    .map(|id| id != conn.id())
-                    .unwrap_or(true);
+                && p.bound_connection()
+                    .map_or(true, |b| !b.same_connection(conn));
             if online {
                 return Err("error.player_already_online".to_string());
             }
@@ -499,11 +498,11 @@ impl PlayerRegistry {
     }
 
     /// 移除注册（挂起失败/会话超时/踢出时调用）。仅当玩家仍绑定了指定连接时移除
-    /// （无连接玩家 `connection_id()` 为 None → 永远不匹配，由其宿主自行移除）。
-    pub fn remove_if_bound(&self, user_id: i32, conn_id: u64) {
+    /// （无连接玩家 `bound_connection()` 为 None → 永远不匹配，由其宿主自行移除）。
+    pub fn remove_if_bound(&self, user_id: i32, conn: &ConnectionHandle) {
         let mut map = self.players.lock().unwrap();
         if let Some(p) = map.get(&user_id) {
-            if p.connection_id() == Some(conn_id) {
+            if p.bound_connection().map_or(false, |b| b.same_connection(conn)) {
                 map.remove(&user_id);
             }
         }

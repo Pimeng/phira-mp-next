@@ -14,7 +14,7 @@ use crate::network::{HANDSHAKE_TIMEOUT, PROTOCOL_VERSION, READ_TIMEOUT};
 use crate::packet::clientbound::{ClientBoundPacket, SharedFrame};
 use crate::packet::serverbound::ServerBoundPacket;
 use ::bytes::Bytes;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -45,8 +45,6 @@ impl DisconnectReason {
     }
 }
 
-static NEXT_CONN_ID: AtomicU64 = AtomicU64::new(1);
-
 /// 活跃连接计数 guard：进入 `spawn_connection` 时 +1，函数退出（含提前 return）时 -1。
 /// 对应 Java `Server.allChannels`（关闭日志用）。
 struct ActiveConnGuard(Arc<crate::server::ServerContext>);
@@ -70,7 +68,6 @@ pub struct ConnectionHandle {
 }
 
 struct Inner {
-    id: u64,
     tx: mpsc::UnboundedSender<WriterMsg>,
     /// ConnectState：0=ACTIVE 1=KICK 2=TIMEOUT 3=DUPLICATE 4=ERROR
     state: AtomicU8,
@@ -80,8 +77,9 @@ struct Inner {
 }
 
 impl ConnectionHandle {
-    pub fn id(&self) -> u64 {
-        self.inner.id
+    /// 是否为同一连接实例（按 `Arc<Inner>` 指针判定，等价于 Java 的对象引用相等）。
+    pub fn same_connection(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
     }
 
     /// 发送一个包（经 `PacketSendEvent`，可取消）。
@@ -156,7 +154,6 @@ impl ConnectionHandle {
     pub(crate) fn new_for_test(tx: mpsc::UnboundedSender<WriterMsg>) -> Self {
         ConnectionHandle {
             inner: Arc::new(Inner {
-                id: NEXT_CONN_ID.fetch_add(1, Ordering::Relaxed),
                 tx,
                 state: AtomicU8::new(0),
                 closed: AtomicBool::new(false),
@@ -179,7 +176,6 @@ pub async fn spawn_connection(
     let _ = stream.set_nodelay(true);
     ctx.active_connections.fetch_add(1, Ordering::SeqCst);
     let _conn_guard = ActiveConnGuard(ctx.clone());
-    let conn_id = NEXT_CONN_ID.fetch_add(1, Ordering::Relaxed);
     let peer = stream
         .peer_addr()
         .map(|a| a.to_string())
@@ -220,7 +216,6 @@ pub async fn spawn_connection(
     // 3. 建立连接对象
     let (tx, mut rx) = mpsc::unbounded_channel::<WriterMsg>();
     let inner = Arc::new(Inner {
-        id: conn_id,
         tx,
         state: AtomicU8::new(0),
         closed: AtomicBool::new(false),
@@ -365,16 +360,15 @@ async fn on_connection_closed(
 
     // 已换绑/顶号：本连接不再代表该玩家 → 跳过
     let same_conn = player
-        .connection_id()
-        .map(|id| id == conn.id())
-        .unwrap_or(true);
+        .bound_connection()
+        .map_or(true, |b| b.same_connection(conn));
     if !same_conn {
         return;
     }
 
     let Some(room) = room else {
         // 未入房：直接移除注册
-        ctx.players.remove_if_bound(player.id(), conn.id());
+        ctx.players.remove_if_bound(player.id(), conn);
         player.on_session_closed(reason);
         unregister_notify(ctx, player).await;
         return;
@@ -384,7 +378,7 @@ async fn on_connection_closed(
     if !suspendable || room.is_monitor_user(player.id()) || !player.can_suspend() {
         let (_l, plan, _d) = room.leave(player.id());
         crate::room::send_broadcasts(plan).await;
-        ctx.players.remove_if_bound(player.id(), conn.id());
+        ctx.players.remove_if_bound(player.id(), conn);
         player.on_session_closed(reason);
         unregister_notify(ctx, player).await;
         return;
@@ -403,20 +397,20 @@ async fn on_connection_closed(
     if ev.is_cancelled() {
         let (_l, plan, _d) = room.leave(player.id());
         crate::room::send_broadcasts(plan).await;
-        ctx.players.remove_if_bound(player.id(), conn.id());
+        ctx.players.remove_if_bound(player.id(), conn);
         player.on_session_closed(reason);
         unregister_notify(ctx, player).await;
         return;
     }
 
     let uid = player.id();
-    let cid = conn.id();
+    let conn2 = conn.clone();
     let ctx2 = ctx.clone();
     let remover = move || {
-        ctx2.players.remove_if_bound(uid, cid);
+        ctx2.players.remove_if_bound(uid, &conn2);
     };
     if ctx.sessions.suspend(player.clone(), room, remover).await.is_err() {
-        ctx.players.remove_if_bound(player.id(), conn.id());
+        ctx.players.remove_if_bound(player.id(), conn);
         player.on_session_closed(reason);
         unregister_notify(ctx, player).await;
         return;
