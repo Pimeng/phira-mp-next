@@ -9,6 +9,7 @@
 //! - 断开原因（ConnectState）：QUIT / KICK / TIMEOUT / DUPLICATE / ERROR。
 
 use crate::frame::FrameDecoder;
+use crate::log::{log_debug, log_info, log_trace, log_warn};
 use crate::network::handler::{HandleOutcome, HandlerContext, PacketHandler};
 use crate::network::{HANDSHAKE_TIMEOUT, PROTOCOL_VERSION, READ_TIMEOUT};
 use crate::packet::clientbound::{ClientBoundPacket, SharedFrame};
@@ -20,7 +21,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex, Notify};
 use tokio::time::timeout;
-use tracing::{debug, info, warn};
 
 /// 断开原因（5.4 节 DisconnectReason）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,6 +55,7 @@ impl Drop for ActiveConnGuard {
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum WriterMsg {
     Frame(Bytes),
     Shared(SharedFrame),
@@ -180,7 +181,7 @@ pub async fn spawn_connection(
         .peer_addr()
         .map(|a| a.to_string())
         .unwrap_or_else(|_| "unknown".into());
-    debug!("New connection: {peer}");
+    log_debug!(&ctx.i18n, "LOG_CONN_NEW", ("peer", peer));
 
     // 1. 可选 PROXY 协议
     let mut pending: Vec<u8> = Vec::new();
@@ -194,7 +195,7 @@ pub async fn spawn_connection(
                 pending = res.pending;
             }
             Err(e) => {
-                warn!("Proxy protocol failed: {e}");
+                log_warn!(&ctx.i18n, "LOG_CONN_PROXY_FAILED", ("err", e.to_string()));
                 return;
             }
         }
@@ -204,12 +205,16 @@ pub async fn spawn_connection(
     let version = match read_version(&mut stream, &mut pending).await {
         Ok(v) => v,
         Err(e) => {
-            debug!("Handshake failed: {e}");
+            log_debug!(&ctx.i18n, "LOG_CONN_HANDSHAKE_FAILED", ("err", e.to_string()));
             return;
         }
     };
     if version != PROTOCOL_VERSION {
-        debug!("Bad protocol version: {version:#04x}");
+        log_debug!(
+            &ctx.i18n,
+            "LOG_CONN_BAD_VERSION",
+            ("version", format!("{version:#04x}")),
+        );
         return;
     }
 
@@ -228,17 +233,22 @@ pub async fn spawn_connection(
 
     // writer 任务：关闭信号优先 drain 已排队帧（避免丢帧）
     let writer_inner = inner.clone();
+    let writer_ctx = ctx.clone();
     tokio::spawn(async move {
         loop {
             match rx.recv().await {
                 Some(WriterMsg::Frame(data)) => {
-                    tracing::trace!("Writer frame: {} bytes", data.len());
+                    log_trace!(&writer_ctx.i18n, "LOG_CONN_WRITER_FRAME", ("bytes", data.len()));
                     if write_half.write_all(&data).await.is_err() {
                         break;
                     }
                 }
                 Some(WriterMsg::Shared(data)) => {
-                    tracing::trace!("Writer shared frame: {} bytes", data.len());
+                    log_trace!(
+                        &writer_ctx.i18n,
+                        "LOG_CONN_WRITER_SHARED",
+                        ("bytes", data.len()),
+                    );
                     if write_half.write_all(&data).await.is_err() {
                         break;
                     }
@@ -288,7 +298,7 @@ pub async fn spawn_connection(
             }
             Ok(None) => {}
             Err(e) => {
-                debug!("Frame error: {e}");
+                log_debug!(&ctx.i18n, "LOG_CONN_FRAME_ERROR", ("err", e.to_string()));
                 break;
             }
         }
@@ -301,7 +311,7 @@ pub async fn spawn_connection(
             }
             Ok(Err(e)) => {
                 inner.state.store(4, Ordering::SeqCst); // ERROR
-                debug!("Read error: {e}");
+                log_debug!(&ctx.i18n, "LOG_CONN_READ_ERROR", ("err", e.to_string()));
                 break;
             }
             Err(_) => {
@@ -334,7 +344,7 @@ pub async fn spawn_connection(
                 None => on_connection_closed(&ctx, &conn, &player, room, suspendable, reason).await,
             }
         }
-    info!("Connection closed: {reason:?}");
+    log_info!(&ctx.i18n, "LOG_CONN_CLOSED", ("reason", format!("{reason:?}")));
 }
 
 /// 断线清理（5.3/5.4 节；对应 Java onClose 回调链）。
@@ -415,7 +425,7 @@ async fn on_connection_closed(
         unregister_notify(ctx, player).await;
         return;
     }
-    info!("Session suspended (user {})", player.id());
+    log_info!(&ctx.i18n, "LOG_CONN_SESSION_SUSPENDED", ("id", player.id()));
     player.on_session_closed(reason);
 }
 
@@ -440,7 +450,7 @@ async fn dispatch(
     let packet = match ServerBoundPacket::decode_frame(&frame) {
         Ok(p) => p,
         Err(e) => {
-            debug!("Packet decode error: {e}");
+            log_debug!(&ctx.server.i18n, "LOG_CONN_DECODE_ERROR", ("err", e.to_string()));
             return false; // 未知包/解码失败 → 关闭连接
         }
     };

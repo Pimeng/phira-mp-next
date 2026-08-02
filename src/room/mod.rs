@@ -183,6 +183,38 @@ pub trait Room: Send + Sync + 'static {
         judges: Vec<crate::packet::data::JudgeEvent>,
     ) -> behavior::Broadcast;
     fn cleanup_for_suspend(&self, user_id: i32) -> behavior::Broadcast;
+
+    // ---- 管理员操作（控制台命令专用；绕过玩家鉴权，默认不支持） ----
+
+    /// 设置房间最大人数（控制台 `maxusers`）。
+    fn admin_set_max_player(&self, _count: usize) -> GameResult<()> {
+        Err(GameError("ERROR_UNSUPPORTED"))
+    }
+
+    /// 强制锁定/解锁（控制台 `lock`；不要求房主）。
+    fn admin_set_locked(&self, _locked: bool) -> GameResult<behavior::Broadcast> {
+        Err(GameError("ERROR_UNSUPPORTED"))
+    }
+
+    /// 开关循环模式（控制台 `cycle`；不要求房主）。
+    fn admin_set_cycle(&self, _cycle: bool) -> GameResult<behavior::Broadcast> {
+        Err(GameError("ERROR_UNSUPPORTED"))
+    }
+
+    /// 指定下一轮房主（控制台 `nexthost`；仅循环模式对局结束时生效）。
+    fn admin_set_next_host(&self, _user_id: i32) -> GameResult<()> {
+        Err(GameError("ERROR_UNSUPPORTED"))
+    }
+
+    /// 立即转移房主（控制台 `sethost`）。
+    fn admin_transfer_host(&self, _user_id: i32) -> GameResult<behavior::Broadcast> {
+        Err(GameError("ERROR_UNSUPPORTED"))
+    }
+
+    /// 管理员向房间广播消息（控制台 `roomsay`；绕过 chat 开关）。
+    fn admin_chat(&self, _content: String) -> GameResult<behavior::Broadcast> {
+        Err(GameError("ERROR_UNSUPPORTED"))
+    }
 }
 
 /// 发送广播计划（锁外执行；共享帧零拷贝）。

@@ -5,6 +5,7 @@
 
 use super::handler::{HandleOutcome, HandlerContext, PacketHandler};
 use crate::events;
+use crate::log::{log_debug, log_error};
 use crate::packet::clientbound::{ClientBoundPacket, JoinRoomData};
 use crate::packet::serverbound::ServerBoundPacket;
 use crate::packet::PacketResult;
@@ -12,7 +13,6 @@ use crate::player::Player;
 use crate::room::{JoinOutcome, RoomSetting};
 use futures::future::BoxFuture;
 use std::sync::Arc;
-use tracing::debug;
 
 /// 每玩家建房冷却（500ms）。
 const CREATE_ROOM_COOLDOWN: std::time::Duration = std::time::Duration::from_millis(500);
@@ -87,7 +87,12 @@ impl PlayHandler {
         let (_outcome, plan) = match room.join(self.player.clone(), false) {
             Ok(v) => v,
             Err(e) => {
-                tracing::error!("creator join failed (room {}): {}", room.id(), e.0);
+                log_error!(
+                    &ctx.server.i18n,
+                    "LOG_PLAY_CREATOR_JOIN_FAILED",
+                    ("room", room.id()),
+                    ("err", e.0),
+                );
                 ctx.close().await;
                 return HandleOutcome::Close;
             }
@@ -116,6 +121,13 @@ impl PlayHandler {
             self.reply(ctx, mk(PacketResult::failed(msg))).await;
             return HandleOutcome::Ok;
         };
+
+        // 房间封禁检查（控制台 banroom 命令）
+        if ctx.server.bans.is_room_banned(&room_id, self.player.id()) {
+            let msg = i18n.message(lang.as_deref(), "ERROR_BANNED_FROM_ROOM");
+            self.reply(ctx, mk(PacketResult::failed(msg))).await;
+            return HandleOutcome::Ok;
+        }
 
         // PlayerPreJoinRoomEvent：可取消
         let ev = events::PlayerPreJoinRoomEvent {
@@ -194,7 +206,11 @@ impl PacketHandler for PlayHandler {
                 }
                 _ => {
                     // 大厅阶段收到房间操作包 → 踢（对应 Java PlayHandler 无对应 handle 方法）
-                    debug!("Play stage: unexpected packet (user {})", self.player.id());
+                    log_debug!(
+                        &ctx.server.i18n,
+                        "LOG_PLAY_UNEXPECTED_PACKET",
+                        ("id", self.player.id()),
+                    );
                     HandleOutcome::Close
                 }
             }

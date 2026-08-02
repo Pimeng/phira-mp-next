@@ -5,6 +5,7 @@
 
 use super::handler::{HandleOutcome, HandlerContext, PacketHandler};
 use crate::events;
+use crate::log::log_info;
 use crate::packet::clientbound::{AuthenticateData, ClientBoundPacket};
 use crate::packet::data::FullUserProfile;
 use crate::packet::serverbound::ServerBoundPacket;
@@ -12,7 +13,6 @@ use crate::packet::PacketResult;
 use crate::phira::UserInfo;
 use futures::future::BoxFuture;
 use std::sync::Arc;
-use tracing::info;
 
 const MAX_TOKEN_BYTES: usize = 256;
 
@@ -100,7 +100,12 @@ impl PacketHandler for AuthenticateHandler {
                 return HandleOutcome::Close;
             }
             let peer = ctx.conn.peer_addr().await;
-            info!("{peer} sent his token [{}]", mask_token(&token));
+            log_info!(
+                &ctx.server.i18n,
+                "LOG_AUTH_TOKEN",
+                ("peer", peer),
+                ("token", mask_token(&token)),
+            );
 
             let info = match Self::resolve_user_info(ctx, &token).await {
                 Ok(i) => i,
@@ -108,6 +113,12 @@ impl PacketHandler for AuthenticateHandler {
                     return Self::fail_and_close(ctx, reason).await;
                 }
             };
+
+            // 全局封禁检查（控制台 ban 命令）
+            if ctx.server.bans.is_banned(info.id) {
+                let msg = ctx.server.i18n.message(info.language.as_deref(), "ERROR_BANNED");
+                return Self::fail_and_close(ctx, msg).await;
+            }
 
             // PlayerPreLoginEvent：可取消（白名单/封禁）
             let ev = events::PlayerPreLoginEvent {
@@ -182,7 +193,13 @@ impl PacketHandler for AuthenticateHandler {
             })
             .await;
 
-            info!("{peer} has logged in as [{}] {}", info.id, info.name);
+            log_info!(
+                &ctx.server.i18n,
+                "LOG_AUTH_LOGGED_IN",
+                ("peer", peer),
+                ("id", info.id),
+                ("name", info.name),
+            );
             ctx.server.events.post(events::PLAYER_POST_LOGIN, events::PlayerPostLoginEvent { player: player.clone() }).await;
 
             // Switch：恢复挂起 → RoomHandler；否则 → PlayHandler

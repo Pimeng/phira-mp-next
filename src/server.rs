@@ -5,8 +5,10 @@
 //! - 断线清理逻辑在 [`crate::network::connection`]（对应 Java PlayerConnection 的 onClose 回调）。
 //! - 会话挂起/恢复在 [`crate::session::SessionManager`]（对应 Java LocalSessionManager）。
 
+use crate::ban::BanManager;
 use crate::eventbus::EventBus;
 use crate::i18n::I18nService;
+use crate::log::{log_info, log_warn};
 use crate::phira::PhiraFetcher;
 use crate::player::PlayerRegistry;
 use crate::room::RoomRegistry;
@@ -16,13 +18,12 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use tokio::sync::Notify;
-use tracing::info;
 
 /// 命令行参数（1.2 节）。
 #[derive(Parser, Debug, Clone)]
 #[command(name = "phira-mp", about = "Phira multiplayer server")]
 pub struct ServerArgs {
-    /// 监听端口
+    /// 偷听端口
     #[arg(long, default_value_t = 12346, value_parser = clap::value_parser!(u16).range(1..))]
     pub port: u16,
 
@@ -30,7 +31,7 @@ pub struct ServerArgs {
     #[arg(long, default_value = "0.0.0.0")]
     pub host: String,
 
-    /// HTTP API 监听端口（0 = 禁用 HTTP 服务）
+    /// HTTP API 偷听端口（0 = 禁用 HTTP 服务）
     #[arg(long, default_value_t = 12347, value_parser = clap::value_parser!(u16).range(0..))]
     pub http_port: u16,
 
@@ -42,8 +43,8 @@ pub struct ServerArgs {
     #[arg(long, default_value_t = false)]
     pub proxy_protocol: bool,
 
-    /// 默认玩家语言
-    #[arg(long, default_value = "zh-CN")]
+    /// 服务器默认语言（i18n 回退链的第二级：玩家语言 → 服务器默认 → zh-CN → key）
+    #[arg(long, alias = "lang", default_value = "zh-CN")]
     pub language: String,
 
     /// 会话挂起超时（秒）
@@ -118,14 +119,16 @@ pub struct ServerContext {
     pub players: PlayerRegistry,
     pub rooms: RoomRegistry,
     pub sessions: Arc<SessionManager>,
+    /// 封禁管理（全局封禁 + 房间封禁；控制台命令数据源）。
+    pub bans: BanManager,
     pub phira: PhiraFetcher,
     pub i18n: I18nService,
     pub events: EventBus,
     pub extensions: Extensions,
     pub record_dir: Option<String>,
-    /// 实际监听地址（run 中绑定后填入，格式 host:port）。
+    /// 实际偷听地址（run 中绑定后填入，格式 host:port）。
     pub listen_addr: RwLock<Option<String>>,
-    /// 实际 HTTP 监听地址（http_port > 0 时填入，格式 host:port）。
+    /// 实际 HTTP 偷听地址（http_port > 0 时填入，格式 host:port）。
     pub http_addr: RwLock<Option<String>>,
     /// 活跃连接数（对应 Java `allChannels`，关闭日志用）。
     pub active_connections: AtomicUsize,
@@ -146,7 +149,7 @@ pub fn global_ctx() -> Option<Arc<ServerContext>> {
     with_server_ctx(|ctx| ctx.clone())
 }
 
-/// 测试辅助：读全局 ctx 的监听地址。
+/// 测试辅助：读全局 ctx 的偷听地址。
 pub fn test_listen_addr() -> Option<String> {
     with_server_ctx(|ctx| ctx.listen_addr.read().unwrap().clone()).flatten()
 }
@@ -168,6 +171,7 @@ impl ServerContext {
             players: PlayerRegistry::new(),
             rooms: RoomRegistry::new(),
             sessions,
+            bans: BanManager::new(),
             events: EventBus::new(),
             extensions: Extensions::default(),
             listen_addr: RwLock::new(None),
@@ -204,22 +208,35 @@ impl ServerContext {
 /// 启动服务端（1.1 节；对应 Java `Server.main` + 生命周期事件）。
 pub async fn run(args: ServerArgs) -> std::io::Result<()> {
     let boot_start = Instant::now();
-    info!("Booting up Phira Server...");
-
     let ctx = ServerContext::new(args);
-    info!("Default language: {}", ctx.args.language);
+
+    // 第一条日志：当前服务器语言（多语言日志系统；按服务器默认语言渲染）。
+    // 回退链：玩家语言 → 服务器默认 → zh-CN → key。
+    log_info!(
+        &ctx.i18n,
+        &ctx.args.language,
+        "LOG_LANGUAGE",
+        ("lang", &ctx.args.language),
+    );
+    log_info!(&ctx.i18n, None, "LOG_BOOTING");
 
     // 控制台命令线程（对应 Java CommandService）
     crate::command::start_command_thread(ctx.clone());
 
-    info!("Initializing network...");
+    log_info!(&ctx.i18n, None, "LOG_INIT_NETWORK");
     let listener =
         tokio::net::TcpListener::bind(format!("{}:{}", ctx.args.host, ctx.args.port)).await?;
     *ctx.listen_addr.write().unwrap() = Some(listener.local_addr()?.to_string());
-    info!("Listening on {}:{}", ctx.args.host, ctx.args.port);
+    log_info!(
+        &ctx.i18n,
+        None,
+        "LOG_LISTENING",
+        ("host", &ctx.args.host),
+        ("port", ctx.args.port),
+    );
     // HTTP 查询 API（GET /api/rooms）
     if ctx.args.http_port > 0 {
-        info!("Initializing HTTP API...");
+        log_info!(&ctx.i18n, None, "LOG_INIT_HTTP");
         crate::http::start(ctx.clone(), ctx.args.http_host.clone(), ctx.args.http_port).await?;
     }
     ctx.events
@@ -227,8 +244,13 @@ pub async fn run(args: ServerArgs) -> std::io::Result<()> {
             phase: crate::events::LifecyclePhase::Started,
         })
         .await;
-    info!("Done ({:.3}s)!", boot_start.elapsed().as_secs_f64());
-    info!("Server is running. Type 'stop' to stop.");
+    log_info!(
+        &ctx.i18n,
+        None,
+        "LOG_DONE",
+        ("secs", format!("{:.3}", boot_start.elapsed().as_secs_f64())),
+    );
+    log_info!(&ctx.i18n, None, "LOG_SERVER_RUNNING");
 
     // ctrl-c → 优雅关闭
     {
@@ -253,7 +275,7 @@ pub async fn run(args: ServerArgs) -> std::io::Result<()> {
                         });
                     }
                     Err(e) => {
-                        tracing::warn!("Accept error: {e}");
+                        log_warn!(&ctx.i18n, "LOG_SERVER_ACCEPT_ERROR", ("err", e.to_string()));
                     }
                 }
             }
@@ -272,15 +294,20 @@ pub async fn run(args: ServerArgs) -> std::io::Result<()> {
         })
         .await;
     let shutdown_start = Instant::now();
-    info!("Shutting down...");
+    log_info!(&ctx.i18n, None, "LOG_SHUTTING_DOWN");
     let kick_count = ctx.players.online_players().len();
     // 对应 Java allChannels：server channel + 活跃连接
     let channel_count = ctx.active_connections.load(Ordering::SeqCst) + 1;
     if kick_count > 0 {
-        info!("Kicking {kick_count} player(s)...");
+        log_info!(&ctx.i18n, None, "LOG_KICKING_PLAYERS", ("count", kick_count));
     }
     if channel_count > 0 {
-        info!("Closing {channel_count} channel(s)...");
+        log_info!(
+            &ctx.i18n,
+            None,
+            "LOG_CLOSING_CHANNELS",
+            ("count", channel_count),
+        );
     }
     for player in ctx.players.online_players() {
         player.kick();
@@ -297,13 +324,21 @@ pub async fn run(args: ServerArgs) -> std::io::Result<()> {
             }
         })
         .await;
-        info!("Channels closed.");
+        log_info!(&ctx.i18n, None, "LOG_CHANNELS_CLOSED");
     }
     let uptime = boot_start.elapsed();
-    info!("Uptime: {}m {}s", uptime.as_secs() / 60, uptime.as_secs() % 60);
-    info!(
-        "Shutdown completed in {}ms. Goodbye!",
-        shutdown_start.elapsed().as_millis()
+    log_info!(
+        &ctx.i18n,
+        None,
+        "LOG_UPTIME",
+        ("min", uptime.as_secs() / 60),
+        ("sec", uptime.as_secs() % 60),
+    );
+    log_info!(
+        &ctx.i18n,
+        None,
+        "LOG_SHUTDOWN_COMPLETED",
+        ("ms", shutdown_start.elapsed().as_millis()),
     );
     ctx.events
         .post(crate::events::SERVER_LIFECYCLE, crate::events::ServerLifecycleEvent {

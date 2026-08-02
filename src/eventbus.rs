@@ -80,7 +80,7 @@ impl EventBus {
     }
 
     /// 订阅可变事件：handler 直接拿到 `&mut T`（内部经 Mutex 串行化），
-    /// 可设置取消标记 / 改写内容（对应 Java 的 CancellableEvent 监听器）。
+    /// 可设置取消标记 / 改写内容（对应 Java 的 CancellableEvent 偷听器）。
     pub fn subscribe_mut<F, Fut, T>(&self, key: &'static str, f: F) -> Subscription
     where
         F: Fn(&mut T) -> Fut + Send + Sync + 'static,

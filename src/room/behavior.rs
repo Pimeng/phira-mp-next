@@ -385,7 +385,8 @@ pub(crate) fn cleanup_for_suspend(inner: &Mutex<Inner>, user_id: i32) -> Broadca
     plan
 }
 
-/// 房主转移（6.6 节）：按 userId 升序取下一个；无则最小。返回广播计划。
+/// 房主转移（6.6 节）：优先 `next_host`（控制台 nexthost 指定）；
+/// 否则按 userId 升序取下一个；无则最小。返回广播计划。
 pub(crate) fn transfer_host_plan(g: &mut Inner) -> Broadcast {
     let Some(old_host) = g.host.clone() else {
         return vec![];
@@ -393,6 +394,19 @@ pub(crate) fn transfer_host_plan(g: &mut Inner) -> Broadcast {
     if g.players.is_empty() {
         g.host = None;
         return vec![];
+    }
+    // nexthost 指定：仅当目标在房间且不是当前房主时生效；
+    // 指定当前房主视为「本轮不转移」（next_host 已 take 失效）。
+    match g.next_host.take() {
+        Some(id) if id == old_host.id() => return vec![],
+        Some(id) => {
+            if let Some(p) = g.players.iter().find(|p| p.id() == id).cloned() {
+                g.host = Some(p.clone());
+                return build_host_change_plan(g, Some(old_host), p);
+            }
+            // 目标已不在房间 → 回退默认轮换
+        }
+        None => {}
     }
     let mut sorted: Vec<Arc<dyn Player>> = g.players.clone();
     sorted.sort_by_key(|p| p.id());
@@ -402,9 +416,20 @@ pub(crate) fn transfer_host_plan(g: &mut Inner) -> Broadcast {
         .cloned()
         .unwrap_or_else(|| sorted[0].clone());
     g.host = Some(new_host.clone());
+    build_host_change_plan(g, Some(old_host), new_host)
+}
 
+/// 房主变更广播：旧房主 ChangeHost(false)、新房主 ChangeHost(true)，
+/// 其余成员收 NewHost。
+fn build_host_change_plan(
+    g: &Inner,
+    old_host: Option<Arc<dyn Player>>,
+    new_host: Arc<dyn Player>,
+) -> Broadcast {
     let mut plan = Broadcast::new();
-    plan.push((old_host.clone(), encode_shared(&ClientBoundPacket::change_host(false))));
+    if let Some(old) = old_host {
+        plan.push((old.clone(), encode_shared(&ClientBoundPacket::change_host(false))));
+    }
     plan.push((new_host.clone(), encode_shared(&ClientBoundPacket::change_host(true))));
     let new_id = new_host.id();
     let msg = encode_shared(&ClientBoundPacket::message(Message::NewHost { user: new_id }));
@@ -414,4 +439,71 @@ pub(crate) fn transfer_host_plan(g: &mut Inner) -> Broadcast {
         }
     }
     plan
+}
+
+// ---------------- 管理员操作（控制台命令；不要求房主） ----------------
+
+/// 设置房间最大人数（控制台 `maxusers`）。count 至少为 1。
+pub(crate) fn set_max_player(inner: &Mutex<Inner>, count: usize) -> GameResult<()> {
+    if count == 0 {
+        return Err(GameError("ERROR_INVALID_ARGUMENT"));
+    }
+    inner.lock().unwrap().setting.max_player = count;
+    Ok(())
+}
+
+/// 强制锁定/解锁（控制台 `lock`）。
+pub(crate) fn set_locked(inner: &Mutex<Inner>, locked: bool) -> GameResult<Broadcast> {
+    let mut g = inner.lock().unwrap();
+    g.setting.locked = locked;
+    Ok(broadcast_all(
+        &g,
+        ClientBoundPacket::message(Message::LockRoom { lock: locked }),
+    ))
+}
+
+/// 开关循环模式（控制台 `cycle`）。
+pub(crate) fn set_cycle(inner: &Mutex<Inner>, cycle: bool) -> GameResult<Broadcast> {
+    let mut g = inner.lock().unwrap();
+    g.setting.cycle = cycle;
+    Ok(broadcast_all(
+        &g,
+        ClientBoundPacket::message(Message::CycleRoom { cycle }),
+    ))
+}
+
+/// 指定下一轮房主（控制台 `nexthost`）。目标玩家必须在房间内；
+/// 仅循环模式对局结束时（transfer_host_plan）生效。
+pub(crate) fn set_next_host(inner: &Mutex<Inner>, user_id: i32) -> GameResult<()> {
+    let mut g = inner.lock().unwrap();
+    if !g.players.iter().any(|p| p.id() == user_id) {
+        return Err(GameError("ERROR_PLAYER_NOT_IN_ROOM"));
+    }
+    g.next_host = Some(user_id);
+    Ok(())
+}
+
+/// 立即转移房主（控制台 `sethost`）。
+pub(crate) fn transfer_host_to(inner: &Mutex<Inner>, user_id: i32) -> GameResult<Broadcast> {
+    let mut g = inner.lock().unwrap();
+    if !g.setting.host {
+        return Err(GameError("ERROR_HOST_DISABLED"));
+    }
+    let Some(target) = g.players.iter().find(|p| p.id() == user_id).cloned() else {
+        return Err(GameError("ERROR_PLAYER_NOT_IN_ROOM"));
+    };
+    if g.host.as_ref().map(|h| h.id()) == Some(user_id) {
+        return Ok(vec![]);
+    }
+    let old_host = g.host.replace(target.clone());
+    Ok(build_host_change_plan(&g, old_host, target))
+}
+
+/// 管理员向房间广播消息（控制台 `roomsay`；绕过 chat 开关，user=0 表示系统）。
+pub(crate) fn admin_chat(inner: &Mutex<Inner>, content: String) -> GameResult<Broadcast> {
+    let g = inner.lock().unwrap();
+    Ok(broadcast_all(
+        &g,
+        ClientBoundPacket::message(Message::Chat { user: 0, content }),
+    ))
 }

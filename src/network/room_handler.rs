@@ -7,6 +7,7 @@
 
 use super::handler::{HandleOutcome, HandlerContext, PacketHandler};
 use crate::events;
+use crate::log::log_debug;
 use crate::packet::clientbound::ClientBoundPacket;
 use crate::packet::serverbound::ServerBoundPacket;
 use crate::packet::PacketResult;
@@ -14,7 +15,6 @@ use crate::player::Player;
 use crate::room::{GameResult, PlayedCheck, Room};
 use futures::future::BoxFuture;
 use std::sync::Arc;
-use tracing::debug;
 
 pub struct RoomHandler {
     player: Arc<dyn Player>,
@@ -53,7 +53,11 @@ impl RoomHandler {
     }
 
     fn kick(&self, ctx: &HandlerContext) -> HandleOutcome {
-        debug!("Room stage: unexpected packet, kicking (user {})", self.player.id());
+        log_debug!(
+            &ctx.server.i18n,
+            "LOG_ROOM_UNEXPECTED_PACKET",
+            ("id", self.player.id()),
+        );
         let _ = ctx;
         HandleOutcome::Close
     }
@@ -340,7 +344,10 @@ impl RoomHandler {
                             let dir = std::path::PathBuf::from(dir);
                             tokio::task::spawn_blocking(move || {
                                 if let Err(e) = phira_rec.write_to(&dir, crate::record::CompressionType::Zstd) {
-                                    tracing::warn!("Record write failed: {e}");
+                                    crate::log::log_warn_global!(
+                                        "LOG_ROOM_RECORD_WRITE_FAILED",
+                                        ("err", e.to_string()),
+                                    );
                                 }
                             });
                         }

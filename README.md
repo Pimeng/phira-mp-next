@@ -28,7 +28,7 @@ cargo build --release
 
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
-| `--port` | `12346` | 监听端口 |
+| `--port` | `12346` | 偷听端口 |
 | `--host` | `0.0.0.0` | 绑定地址 |
 | `--language` | `zh-CN` | 默认玩家语言 |
 | `--proxy-protocol` | `false` | 启用 HAProxy PROXY 协议 |

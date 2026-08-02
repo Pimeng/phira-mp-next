@@ -11,6 +11,7 @@
 //!   （对应 Java `PlayerManager.resolvePlayer(userId, clazz, constructor, resumer, closeBinder)`）。
 //! - 认证/谱面/成绩数据源可整体替换（对应 Java `PhiraFetcher.GET_*` 可覆盖）。
 
+use crate::log::log_info;
 use crate::network::connection::{ConnectionHandle, DisconnectReason};
 use crate::packet::clientbound::SharedFrame;
 use crate::phira::{ChartInfo, GameRecord, PhiraError, UserInfo};
@@ -456,11 +457,11 @@ impl PlayerRegistry {
         // 尝试恢复挂起会话（take 语义；校验玩家仍在原房间）
         let suspended = match &existing {
             Some(p) => crate::server::with_server_ctx(|ctx| {
-                tracing::info!("Resolve or resume: checking suspended (user {})", p.id());
+                log_info!(&ctx.i18n, "LOG_PLAYER_CHECK_SUSPENDED", ("id", p.id()));
                 let taken = ctx.sessions.take_suspended(p.id());
-                tracing::info!("Resolve or resume: taking suspended (user {})", p.id());
+                log_info!(&ctx.i18n, "LOG_PLAYER_TAKE_SUSPENDED", ("id", p.id()));
                 if taken.is_some() {
-                    tracing::info!("Resolve or resume: filter check (user {})", p.id());
+                    log_info!(&ctx.i18n, "LOG_PLAYER_FILTER_CHECK", ("id", p.id()));
                 }
                 taken
                     .filter(|s| s.room.contains_member(p.id()))

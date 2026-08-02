@@ -3,13 +3,13 @@
 //! 基于 axum 提供轻量只读接口，与游戏 TCP 协议完全独立：
 //! - `GET /api/rooms` —— 当前服务端房间列表（JSON）。
 
+use crate::log::{log_error, log_info};
 use crate::server::ServerContext;
 use axum::extract::State;
 use axum::routing::get;
 use axum::{Json, Router};
 use serde::Serialize;
 use std::sync::Arc;
-use tracing::info;
 
 /// 启动 HTTP 服务，挂载于 `host:port`（绑定失败返回 Err 由调用方处理）。
 pub async fn start(ctx: Arc<ServerContext>, host: String, port: u16) -> std::io::Result<()> {
@@ -17,11 +17,12 @@ pub async fn start(ctx: Arc<ServerContext>, host: String, port: u16) -> std::io:
         .route("/api/rooms", get(rooms))
         .with_state(ctx.clone());
     let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
-    *ctx.http_addr.write().unwrap() = Some(listener.local_addr()?.to_string());
-    info!("HTTP API listening on {} (GET /api/rooms)", listener.local_addr()?);
+    let addr = listener.local_addr()?.to_string();
+    *ctx.http_addr.write().unwrap() = Some(addr.clone());
+    log_info!(&ctx.i18n, "LOG_HTTP_LISTENING", ("addr", addr));
     tokio::spawn(async move {
         if let Err(e) = axum::serve(listener, app).await {
-            tracing::error!("HTTP server error: {e}");
+            log_error!(&ctx.i18n, "LOG_HTTP_ERROR", ("err", e.to_string()));
         }
     });
     Ok(())

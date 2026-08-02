@@ -4,7 +4,6 @@ use serde::Deserialize;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tracing::debug;
 
 /// 缓存配置（与 Java 版一致）。
 const TOKEN_CACHE_TTL: Duration = Duration::from_secs(600); // 10min
@@ -158,7 +157,11 @@ impl PhiraFetcher {
             }
             match req.send().await {
                 Ok(resp) if resp.status().is_success() => {
-                    debug!("Phira fetch ok: {path} ({})", resp.status());
+                    crate::log::log_debug_global!(
+                        "LOG_PHIRA_FETCH_OK",
+                        ("path", path),
+                        ("status", resp.status().to_string()),
+                    );
                     return resp
                         .json::<T>()
                         .await
@@ -166,7 +169,11 @@ impl PhiraFetcher {
                 }
                 Ok(resp) => {
                     last_err = format!("status {}", resp.status());
-                    debug!("Phira fetch non-2xx: {path} ({last_err})");
+                    crate::log::log_debug_global!(
+                        "LOG_PHIRA_FETCH_NON_2XX",
+                        ("path", path),
+                        ("err", last_err.clone()),
+                    );
                     // 404 不重试，直接判为不存在
                     if resp.status() == reqwest::StatusCode::NOT_FOUND {
                         return Err(PhiraError::NotFound(path.to_string()));
@@ -174,10 +181,18 @@ impl PhiraFetcher {
                 }
                 Err(e) => {
                     last_err = e.to_string();
-                    debug!("Phira fetch transport error: {path} ({last_err})");
+                    crate::log::log_debug_global!(
+                        "LOG_PHIRA_FETCH_TRANSPORT",
+                        ("path", path),
+                        ("err", last_err.clone()),
+                    );
                 }
             }
-            debug!("Phira fetch retry: {path} (attempt {})", attempt);
+            crate::log::log_debug_global!(
+                "LOG_PHIRA_FETCH_RETRY",
+                ("path", path),
+                ("attempt", attempt),
+            );
             tokio::time::sleep(Duration::from_millis(RETRY_BASE_MS * (attempt as u64 + 1))).await;
         }
         Err(PhiraError::Http(last_err))
