@@ -93,9 +93,6 @@ impl PlayHandler {
             creator: self.player.clone(),
         }).await;
         self.reply(ctx, mk(PacketResult::ok())).await;
-        // 房主视角强制同步（对应 Java ProtocolHack.forceSyncInfo）
-        self.reply(ctx, ClientBoundPacket::change_state(room.game_state_protocol())).await;
-        self.reply(ctx, ClientBoundPacket::change_host(true)).await;
         HandleOutcome::Switch(self.room_handler(room))
     }
 
