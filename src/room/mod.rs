@@ -185,9 +185,9 @@ pub async fn send_broadcasts(plan: behavior::Broadcast) {
     behavior::deliver(plan).await;
 }
 
-/// 便捷：直接发共享帧给一名本地玩家。
-pub async fn send_frame_to(player: &Arc<crate::player::LocalPlayer>, frame: &SharedFrame) {
-    player.send_frame(frame).await;
+/// 便捷：直接发共享帧给一名玩家（自定义玩家经 `Player::send_frame` 接收）。
+pub async fn send_frame_to(player: &Arc<dyn crate::player::Player>, frame: &SharedFrame) {
+    player.send_frame(frame.clone()).await;
 }
 
 // ---------------------------------------------------------------------------

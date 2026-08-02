@@ -114,6 +114,21 @@ impl SessionManager {
                 }
             });
             remover();
+            // 玩家已从注册表移除 → PLAYER_UNREGISTER（先取 Arc 再移除）
+            let removed = crate::server::with_server_ctx(|ctx| ctx.players.get(user_id)).flatten();
+            if let Some(player) = removed {
+                crate::server::with_server_ctx(|ctx| {
+                    let bus = ctx.events.clone();
+                    let player = player.clone();
+                    tokio::spawn(async move {
+                        bus.post(
+                            crate::events::PLAYER_UNREGISTER,
+                            crate::events::PlayerUnregisterEvent { player },
+                        )
+                        .await;
+                    });
+                });
+            }
         });
         Ok(())
     }
@@ -201,7 +216,12 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let conn1 = ConnectionHandle::new_for_test(tx);
         let _ = registry
-            .resolve_player(info.clone(), &conn1, |i, c| LocalPlayer::new(i, c), |_p, _c| Ok(None))
+            .resolve_player(
+                info.clone(),
+                Some(&conn1),
+                |i, c| LocalPlayer::new(i, c.expect("test conn")),
+                |_p, _c| Ok(None),
+            )
             .unwrap();
         drop(rx);
         drop(conn1);

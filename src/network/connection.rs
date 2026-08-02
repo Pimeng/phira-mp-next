@@ -330,7 +330,14 @@ pub async fn spawn_connection(
     let reason = conn.disconnect_reason();
     if let Some(h) = handler.as_ref()
         && let Some(player) = h.player_ref() {
-            on_connection_closed(&ctx, &conn, &player, h.room_ref(), h.is_suspendable_room_holder(), reason).await;
+            let room = h.room_ref();
+            let suspendable = h.is_suspendable_room_holder();
+            // disconnect_override：注册后完全接管断线处理（自定义玩家宿主用）
+            let override_handler = ctx.extensions.disconnect_override.read().unwrap().clone();
+            match override_handler {
+                Some(f) => f(ctx.clone(), conn.clone(), player, room, suspendable, reason).await,
+                None => on_connection_closed(&ctx, &conn, &player, room, suspendable, reason).await,
+            }
         }
     info!("Connection closed: {reason:?}");
 }
@@ -344,17 +351,22 @@ async fn on_connection_closed(
     suspendable: bool,
     reason: DisconnectReason,
 ) {
-    // PlayerDisconnectEvent
-    ctx.events
-        .post(crate::events::PLAYER_DISCONNECT, crate::events::PlayerDisconnectEvent {
-            player: player.clone(),
-            reason,
-        })
-        .await;
+    // PlayerDisconnectEvent（可取消：订阅者接管整个断线清理）
+    let ev = crate::events::PlayerDisconnectEvent {
+        player: player.clone(),
+        reason,
+        cancel_reason: None,
+    };
+    let ev = ctx.events.post_mut(crate::events::PLAYER_DISCONNECT, ev).await;
+    if ev.is_cancelled() {
+        // 订阅者已接管清理，默认流程不再执行
+        return;
+    }
 
     // 已换绑/顶号：本连接不再代表该玩家 → 跳过
-    let same_conn = crate::player::local_of(player)
-        .map(|l| l.connection().id() == conn.id())
+    let same_conn = player
+        .connection_id()
+        .map(|id| id == conn.id())
         .unwrap_or(true);
     if !same_conn {
         return;
@@ -363,14 +375,18 @@ async fn on_connection_closed(
     let Some(room) = room else {
         // 未入房：直接移除注册
         ctx.players.remove_if_bound(player.id(), conn.id());
+        player.on_session_closed(reason);
+        unregister_notify(ctx, player).await;
         return;
     };
 
-    // Monitor 不挂起，直接离开（对应 Java SuspendableRoomHolder 为 false）
-    if !suspendable || room.is_monitor_user(player.id()) {
+    // Monitor / 不支持挂起 / 非可挂起 → 直接离开（对应 Java SuspendableRoomHolder 为 false）
+    if !suspendable || room.is_monitor_user(player.id()) || !player.can_suspend() {
         let (_l, plan, _d) = room.leave(player.id());
         crate::room::send_broadcasts(plan).await;
         ctx.players.remove_if_bound(player.id(), conn.id());
+        player.on_session_closed(reason);
+        unregister_notify(ctx, player).await;
         return;
     }
 
@@ -388,6 +404,8 @@ async fn on_connection_closed(
         let (_l, plan, _d) = room.leave(player.id());
         crate::room::send_broadcasts(plan).await;
         ctx.players.remove_if_bound(player.id(), conn.id());
+        player.on_session_closed(reason);
+        unregister_notify(ctx, player).await;
         return;
     }
 
@@ -399,9 +417,24 @@ async fn on_connection_closed(
     };
     if ctx.sessions.suspend(player.clone(), room, remover).await.is_err() {
         ctx.players.remove_if_bound(player.id(), conn.id());
+        player.on_session_closed(reason);
+        unregister_notify(ctx, player).await;
         return;
     }
     info!("Session suspended (user {})", player.id());
+    player.on_session_closed(reason);
+}
+
+/// 玩家从注册表移除后发 `PLAYER_UNREGISTER`（观察事件）。
+async fn unregister_notify(ctx: &Arc<crate::server::ServerContext>, player: &Arc<dyn crate::player::Player>) {
+    ctx.events
+        .post(
+            crate::events::PLAYER_UNREGISTER,
+            crate::events::PlayerUnregisterEvent {
+                player: player.clone(),
+            },
+        )
+        .await;
 }
 
 /// 处理单个帧。返回 false 表示应终止读循环。

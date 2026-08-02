@@ -11,17 +11,19 @@ use crate::packet::clientbound::{encode_shared, ClientBoundPacket, SharedFrame};
 use crate::packet::data::{JudgeEvent, TouchFrame};
 use crate::packet::message::Message;
 use crate::packet::state::GameState;
-use crate::player::{LocalPlayer, Player};
+use crate::player::Player;
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 /// 广播计划：(目标玩家, 预编码共享帧)。
-pub type Broadcast = Vec<(Arc<LocalPlayer>, SharedFrame)>;
+/// 目标为 `Arc<dyn Player>`（不限于 LocalPlayer）——自定义玩家经
+/// [`Player::send_frame`] 覆写即可接收广播。
+pub type Broadcast = Vec<(Arc<dyn Player>, SharedFrame)>;
 
 /// 发送广播计划（锁外执行；共享帧零拷贝，跳过已离线目标）。
 pub async fn deliver(plan: Broadcast) {
     for (target, frame) in plan {
-        target.send_frame(&frame).await;
+        target.send_frame(frame).await;
     }
 }
 
@@ -31,8 +33,7 @@ pub(crate) fn broadcast_all(g: &Inner, packet: ClientBoundPacket) -> Broadcast {
     g.players
         .iter()
         .chain(g.monitors.iter())
-        .filter_map(crate::player::local_of)
-        .map(|p| (p, frame.clone()))
+        .map(|p| (p.clone(), frame.clone()))
         .collect()
 }
 
@@ -152,11 +153,7 @@ pub(crate) fn ready(inner: &Mutex<Inner>, user_id: i32) -> GameResult<(Broadcast
         .players
         .iter()
         .chain(g.monitors.iter())
-        .filter(|p| {
-            crate::player::local_of(p)
-                .map(|l| l.is_online())
-                .unwrap_or(false)
-        })
+        .filter(|p| p.is_online())
         .map(|p| p.id())
         .collect();
 
@@ -288,11 +285,7 @@ fn check_game_end_inner(g: &mut Inner, plan: &mut Broadcast) -> bool {
     let online_players: Vec<i32> = g
         .players
         .iter()
-        .filter(|p| {
-            crate::player::local_of(p)
-                .map(|l| l.is_online())
-                .unwrap_or(false)
-        })
+        .filter(|p| p.is_online())
         .map(|p| p.id())
         .collect();
     let all_done = !online_players.is_empty() && online_players.iter().all(|id| done.contains(id));
@@ -340,8 +333,7 @@ pub(crate) fn touch_send(inner: &Mutex<Inner>, user_id: i32, frames: Vec<TouchFr
     });
     g.monitors
         .iter()
-        .filter_map(crate::player::local_of)
-        .map(|m| (m, frame.clone()))
+        .map(|m| (m.clone(), frame.clone()))
         .collect()
 }
 
@@ -362,8 +354,7 @@ pub(crate) fn judge_send(inner: &Mutex<Inner>, user_id: i32, judges: Vec<JudgeEv
     });
     g.monitors
         .iter()
-        .filter_map(crate::player::local_of)
-        .map(|m| (m, frame.clone()))
+        .map(|m| (m.clone(), frame.clone()))
         .collect()
 }
 
@@ -413,19 +404,14 @@ pub(crate) fn transfer_host_plan(g: &mut Inner) -> Broadcast {
     g.host = Some(new_host.clone());
 
     let mut plan = Broadcast::new();
-    if let Some(old) = crate::player::local_of(&old_host) {
-        plan.push((old, encode_shared(&ClientBoundPacket::change_host(false))));
-    }
-    if let Some(new) = crate::player::local_of(&new_host) {
-        plan.push((new, encode_shared(&ClientBoundPacket::change_host(true))));
-    }
+    plan.push((old_host.clone(), encode_shared(&ClientBoundPacket::change_host(false))));
+    plan.push((new_host.clone(), encode_shared(&ClientBoundPacket::change_host(true))));
     let new_id = new_host.id();
     let msg = encode_shared(&ClientBoundPacket::message(Message::NewHost { user: new_id }));
     for target in g.players.iter().chain(g.monitors.iter()) {
-        if target.id() != new_id
-            && let Some(t) = crate::player::local_of(target) {
-                plan.push((t, msg.clone()));
-            }
+        if target.id() != new_id {
+            plan.push((target.clone(), msg.clone()));
+        }
     }
     plan
 }

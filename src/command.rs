@@ -8,7 +8,6 @@
 //!
 //! 输入/回显走 [`terminal_console`]（对标 TCA 交互式终端 + 日志不打断输入行）。
 
-use crate::player::Player as _;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use terminal_console::{self as console, ConsoleHandler};

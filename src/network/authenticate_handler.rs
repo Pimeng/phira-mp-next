@@ -119,16 +119,19 @@ impl PacketHandler for AuthenticateHandler {
                 return Self::fail_and_close(ctx, reason).await;
             }
 
-            // 注册/恢复（对应 Java resolvePlayer 的默认 LocalPlayer 路径）
-            let (result, old_conn) = match ctx
-                .server
-                .players
-                .resolve_or_resume(info.clone(), &ctx.conn)
-                .await
-            {
-                Ok(r) => r,
-                Err(key) => {
-                    return Self::fail_and_close(ctx, ctx.server.i18n.message(info.language.as_deref(), &key)).await;
+            // 注册/恢复（对应 Java resolvePlayer 的默认 LocalPlayer 路径；
+            // 自定义玩家类型经 `extensions.player_resolver` 接管）
+            let (result, old_conn) = {
+                let resolver = ctx.server.extensions.player_resolver.read().unwrap().clone();
+                let res = match resolver {
+                    Some(r) => r(ctx.server.clone(), info.clone(), ctx.conn.clone()).await,
+                    None => ctx.server.players.resolve_or_resume(info.clone(), &ctx.conn).await,
+                };
+                match res {
+                    Ok(r) => r,
+                    Err(key) => {
+                        return Self::fail_and_close(ctx, ctx.server.i18n.message(info.language.as_deref(), &key)).await;
+                    }
                 }
             };
             let player = result.player;

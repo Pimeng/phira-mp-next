@@ -12,6 +12,7 @@
 //! - 认证/谱面/成绩数据源可整体替换（对应 Java `PhiraFetcher.GET_*` 可覆盖）。
 
 use crate::network::connection::{ConnectionHandle, DisconnectReason};
+use crate::packet::clientbound::SharedFrame;
 use crate::phira::{ChartInfo, GameRecord, PhiraError, UserInfo};
 use std::any::Any;
 use std::collections::HashMap;
@@ -90,6 +91,35 @@ pub trait Player: Send + Sync + 'static {
     fn extension_typed(&self, _type_id: std::any::TypeId) -> Option<Arc<dyn Any + Send + Sync>> {
         None
     }
+
+    // ---- 连接/生命周期钩子（默认实现；自定义玩家按需覆写） ----
+
+    /// 当前绑定连接 id（无连接的实现返回 None）。
+    fn connection_id(&self) -> Option<u64> {
+        None
+    }
+
+    /// 是否在线（默认 false；LocalPlayer 按连接状态判断）。
+    fn is_online(&self) -> bool {
+        false
+    }
+
+    /// 掉线时是否允许挂起会话（RemotePlayer 等无连接实现覆写为 false）。
+    fn can_suspend(&self) -> bool {
+        true
+    }
+
+    /// 会话关闭钩子（对应 Java `closeBinder`；默认空实现）。
+    /// 框架断线清理时调用；无连接的实现由其宿主在会话结束时自行调用。
+    fn on_session_closed(&self, _reason: DisconnectReason) {}
+
+    /// 发送预编码共享帧（广播零拷贝路径；无连接实现覆写为转发到远端）。
+    fn send_frame<'a>(&'a self, _frame: SharedFrame) -> futures::future::BoxFuture<'a, ()> {
+        Box::pin(async {})
+    }
+
+    /// 踢下线（默认空实现）。
+    fn kick(&self) {}
 }
 
 /// 泛型便捷：设置扩展数据。
@@ -121,6 +151,16 @@ pub fn local_of(player: &Arc<dyn Player>) -> Option<Arc<LocalPlayer>> {
         }
     } else {
         None
+    }
+}
+
+/// `dyn Player` 的 Debug（经 id/name 呈现；自定义实现无需自带 Debug）。
+impl std::fmt::Debug for dyn Player {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Player")
+            .field("id", &self.id())
+            .field("name", &self.name())
+            .finish()
     }
 }
 
@@ -170,17 +210,6 @@ impl LocalPlayer {
         self.connection.resume(conn)
     }
 
-    pub fn is_online(&self) -> bool {
-        !self.connection().is_closed()
-    }
-
-    /// 踢人：标记后由 room/handler 层调用 leave + close。
-    pub fn kick(&self) {
-        self.kicked.store(true, Ordering::SeqCst);
-        let conn = self.connection();
-        conn.mark_kicked();
-    }
-
     pub fn is_kicked(&self) -> bool {
         self.kicked.load(Ordering::SeqCst)
     }
@@ -189,11 +218,6 @@ impl LocalPlayer {
 
     pub async fn send(&self, packet: crate::packet::clientbound::ClientBoundPacket) {
         self.connection().send(packet).await;
-    }
-
-    /// 发送预编码共享帧（广播零拷贝路径）。
-    pub async fn send_frame(&self, frame: &crate::packet::clientbound::SharedFrame) {
-        self.connection().send_frame(frame.clone()).await;
     }
 }
 
@@ -220,6 +244,29 @@ impl Player for LocalPlayer {
 
     fn extension_typed(&self, type_id: std::any::TypeId) -> Option<Arc<dyn Any + Send + Sync>> {
         self.extensions.read().unwrap().get(&type_id).cloned()
+    }
+
+    fn connection_id(&self) -> Option<u64> {
+        Some(self.connection().id())
+    }
+
+    fn is_online(&self) -> bool {
+        !self.connection().is_closed()
+    }
+
+    fn can_suspend(&self) -> bool {
+        true
+    }
+
+    fn send_frame<'a>(&'a self, frame: SharedFrame) -> futures::future::BoxFuture<'a, ()> {
+        let conn = self.connection();
+        Box::pin(async move { conn.send_frame(frame).await })
+    }
+
+    fn kick(&self) {
+        self.kicked.store(true, Ordering::SeqCst);
+        let conn = self.connection();
+        conn.mark_kicked();
     }
 }
 
@@ -329,38 +376,42 @@ impl PlayerRegistry {
     /// 注册或恢复（对应 Java `resolvePlayer` 的泛型体操）：
     ///
     /// - 不存在 → 用 `constructor` 创建。
-    /// - 存在且为同一连接 → 直接返回（仅 LocalPlayer 可判定）。
+    /// - 存在且为同一连接 → 直接返回。
     /// - 存在但不同连接 → `resumer` 换绑/接管，并取出挂起会话供恢复。
+    ///
+    /// `conn` 为 `None` 表示无连接玩家（如 RemotePlayer）；此时 constructor 收到
+    /// `None`，resumer 负责定义「接管」语义（无连接玩家可直接返回 `Ok(None)`）。
     ///
     /// 返回 `(ResolveResult, 旧连接)`；旧连接若存在且未关闭，调用方负责踢旧。
     pub fn resolve_player<C, R>(
         &self,
         info: Arc<UserInfo>,
-        conn: &ConnectionHandle,
+        conn: Option<&ConnectionHandle>,
         constructor: C,
         resumer: R,
     ) -> Result<(ResolveResult, Option<ConnectionHandle>), String>
     where
-        C: FnOnce(Arc<UserInfo>, ConnectionHandle) -> Arc<dyn Player>,
-        R: FnOnce(&Arc<dyn Player>, ConnectionHandle) -> Result<Option<ConnectionHandle>, String>,
+        C: FnOnce(Arc<UserInfo>, Option<ConnectionHandle>) -> Arc<dyn Player>,
+        R: FnOnce(&Arc<dyn Player>, Option<ConnectionHandle>) -> Result<Option<ConnectionHandle>, String>,
     {
         let (player, created, old_conn) = {
             let mut map = self.players.lock().unwrap();
             match map.get(&info.id) {
                 None => {
-                    let player = constructor(info.clone(), conn.clone());
+                    let player = constructor(info.clone(), conn.cloned());
                     map.insert(info.id, player.clone());
                     (player, true, None)
                 }
                 Some(existing) => {
-                    let same_conn = local_of(existing)
-                        .map(|l| l.connection().id() == conn.id())
+                    let same_conn = conn
+                        .as_ref()
+                        .map(|c| existing.connection_id() == Some(c.id()))
                         .unwrap_or(false);
                     if same_conn {
                         // 同一连接重复认证（不应发生）
                         (existing.clone(), false, None)
                     } else {
-                        let old = resumer(existing, conn.clone())?;
+                        let old = resumer(existing, conn.cloned())?;
                         (existing.clone(), false, old)
                     }
                 }
@@ -394,9 +445,10 @@ impl PlayerRegistry {
         // 已在线且连接存活 → 拒绝重复登录
         let existing = self.players.lock().unwrap().get(&info.id).cloned();
         if let Some(p) = &existing {
-            let online = local_of(p)
-                .map(|l| !l.connection().is_closed() && l.connection().id() != conn.id())
-                .unwrap_or(false);
+            let online = p.is_online()
+                && p.connection_id()
+                    .map(|id| id != conn.id())
+                    .unwrap_or(true);
             if online {
                 return Err("error.player_already_online".to_string());
             }
@@ -427,13 +479,16 @@ impl PlayerRegistry {
 
         self.resolve_player(
             info,
-            conn,
-            |info, c| LocalPlayer::new(info, c),
+            Some(conn),
+            |info, c| LocalPlayer::new(info, c.expect("LocalPlayer requires a connection")),
             |player, new_conn| {
                 // 换绑：取出旧连接，若存活由调用方踢旧
                 local_of(player)
                     .ok_or_else(|| "error.player_type_unsupported".to_string())
-                    .map(|l| Some(l.bind_connection(new_conn)))
+                    .map(|l| {
+                        let c = new_conn.expect("resume requires a connection");
+                        Some(l.bind_connection(c))
+                    })
             },
         )
         .map(|(mut result, old)| {
@@ -443,14 +498,12 @@ impl PlayerRegistry {
         })
     }
 
-    /// 移除注册（挂起失败/会话超时/踢出时调用）。仅当注册的连接仍是指定连接时移除。
+    /// 移除注册（挂起失败/会话超时/踢出时调用）。仅当玩家仍绑定了指定连接时移除
+    /// （无连接玩家 `connection_id()` 为 None → 永远不匹配，由其宿主自行移除）。
     pub fn remove_if_bound(&self, user_id: i32, conn_id: u64) {
         let mut map = self.players.lock().unwrap();
         if let Some(p) = map.get(&user_id) {
-            let matches = local_of(p)
-                .map(|l| l.connection().id() == conn_id)
-                .unwrap_or(false);
-            if matches {
+            if p.connection_id() == Some(conn_id) {
                 map.remove(&user_id);
             }
         }
@@ -465,17 +518,16 @@ impl PlayerRegistry {
     }
 
     pub fn is_online(&self, user_id: i32) -> bool {
-        self.get(user_id)
-            .and_then(|p| local_of(&p).map(|l| l.is_online()))
-            .unwrap_or(false)
+        self.get(user_id).map(|p| p.is_online()).unwrap_or(false)
     }
 
-    pub fn online_players(&self) -> Vec<Arc<LocalPlayer>> {
+    pub fn online_players(&self) -> Vec<Arc<dyn Player>> {
         self.players
             .lock()
             .unwrap()
             .values()
-            .filter_map(|p| local_of(p).filter(|l| l.is_online()))
+            .filter(|p| p.is_online())
+            .cloned()
             .collect()
     }
 

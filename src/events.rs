@@ -27,6 +27,7 @@ pub const PLAYER_CREATE: &str = "player.create";
 pub const PLAYER_POST_LOGIN: &str = "player.post_login";
 pub const PLAYER_CONNECTION_BIND: &str = "player.connection_bind";
 pub const PLAYER_DISCONNECT: &str = "player.disconnect";
+pub const PLAYER_UNREGISTER: &str = "player.unregister";
 
 pub const PACKET_RECEIVE: &str = "network.packet_receive";
 pub const PACKET_SEND: &str = "network.packet_send";
@@ -130,9 +131,18 @@ pub struct PlayerConnectionBindEvent {
     pub player: Arc<dyn Player>,
 }
 
+/// 断线事件：**可取消**——订阅者 `cancel` 后接管整个断线清理流程
+/// （默认清理不再执行，订阅者自行负责移除注册/退房/挂起）。
 pub struct PlayerDisconnectEvent {
     pub player: Arc<dyn Player>,
     pub reason: DisconnectReason,
+    pub cancel_reason: Option<String>,
+}
+cancellable!(PlayerDisconnectEvent);
+
+/// 玩家从注册表移除事件（观察用，不可拦截）。
+pub struct PlayerUnregisterEvent {
+    pub player: Arc<dyn Player>,
 }
 
 // ---------------- network ----------------
