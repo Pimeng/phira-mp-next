@@ -405,12 +405,11 @@ impl PlayerRegistry {
         // 尝试恢复挂起会话（take 语义；校验玩家仍在原房间）
         let suspended = match &existing {
             Some(p) => crate::server::with_server_ctx(|ctx| {
-                let has = ctx.sessions.has_suspended(p.id());
-                tracing::info!(user_id = p.id(), has_suspended = has, "resolve_or_resume: checking suspended");
+                tracing::info!("Resolve or resume: checking suspended (user {})", p.id());
                 let taken = ctx.sessions.take_suspended(p.id());
-                tracing::info!(user_id = p.id(), taken = taken.is_some(), "resolve_or_resume: take_suspended");
-                if let Some(s) = &taken {
-                    tracing::info!(user_id = p.id(), contains = s.room.contains_member(p.id()), room_id = %s.room.id(), "resolve_or_resume: filter check");
+                tracing::info!("Resolve or resume: taking suspended (user {})", p.id());
+                if taken.is_some() {
+                    tracing::info!("Resolve or resume: filter check (user {})", p.id());
                 }
                 taken
                     .filter(|s| s.room.contains_member(p.id()))

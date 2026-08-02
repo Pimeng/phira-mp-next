@@ -47,6 +47,16 @@ impl DisconnectReason {
 
 static NEXT_CONN_ID: AtomicU64 = AtomicU64::new(1);
 
+/// 活跃连接计数 guard：进入 `spawn_connection` 时 +1，函数退出（含提前 return）时 -1。
+/// 对应 Java `Server.allChannels`（关闭日志用）。
+struct ActiveConnGuard(Arc<crate::server::ServerContext>);
+
+impl Drop for ActiveConnGuard {
+    fn drop(&mut self) {
+        self.0.active_connections.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 pub(crate) enum WriterMsg {
     Frame(Bytes),
     Shared(SharedFrame),
@@ -167,12 +177,14 @@ pub async fn spawn_connection(
     initial_handler: Box<dyn PacketHandler>,
 ) {
     let _ = stream.set_nodelay(true);
+    ctx.active_connections.fetch_add(1, Ordering::SeqCst);
+    let _conn_guard = ActiveConnGuard(ctx.clone());
     let conn_id = NEXT_CONN_ID.fetch_add(1, Ordering::Relaxed);
     let peer = stream
         .peer_addr()
         .map(|a| a.to_string())
         .unwrap_or_else(|_| "unknown".into());
-    debug!(conn_id, %peer, "new connection");
+    debug!("New connection: {peer}");
 
     // 1. 可选 PROXY 协议
     let mut pending: Vec<u8> = Vec::new();
@@ -186,7 +198,7 @@ pub async fn spawn_connection(
                 pending = res.pending;
             }
             Err(e) => {
-                warn!(conn_id, "proxy protocol failed: {e}");
+                warn!("Proxy protocol failed: {e}");
                 return;
             }
         }
@@ -196,12 +208,12 @@ pub async fn spawn_connection(
     let version = match read_version(&mut stream, &mut pending).await {
         Ok(v) => v,
         Err(e) => {
-            debug!(conn_id, "handshake failed: {e}");
+            debug!("Handshake failed: {e}");
             return;
         }
     };
     if version != PROTOCOL_VERSION {
-        debug!(conn_id, "bad protocol version {version:#04x}");
+        debug!("Bad protocol version: {version:#04x}");
         return;
     }
 
@@ -225,13 +237,13 @@ pub async fn spawn_connection(
         loop {
             match rx.recv().await {
                 Some(WriterMsg::Frame(data)) => {
-                    tracing::trace!(conn_id, len = data.len(), "writer frame");
+                    tracing::trace!("Writer frame: {} bytes", data.len());
                     if write_half.write_all(&data).await.is_err() {
                         break;
                     }
                 }
                 Some(WriterMsg::Shared(data)) => {
-                    tracing::trace!(conn_id, len = data.len(), "writer shared frame");
+                    tracing::trace!("Writer shared frame: {} bytes", data.len());
                     if write_half.write_all(&data).await.is_err() {
                         break;
                     }
@@ -281,7 +293,7 @@ pub async fn spawn_connection(
             }
             Ok(None) => {}
             Err(e) => {
-                debug!(conn_id, "frame error: {e}");
+                debug!("Frame error: {e}");
                 break;
             }
         }
@@ -294,7 +306,7 @@ pub async fn spawn_connection(
             }
             Ok(Err(e)) => {
                 inner.state.store(4, Ordering::SeqCst); // ERROR
-                debug!(conn_id, "read error: {e}");
+                debug!("Read error: {e}");
                 break;
             }
             Err(_) => {
@@ -320,7 +332,7 @@ pub async fn spawn_connection(
         && let Some(player) = h.player_ref() {
             on_connection_closed(&ctx, &conn, &player, h.room_ref(), h.is_suspendable_room_holder(), reason).await;
         }
-    info!(conn_id, ?reason, "connection closed");
+    info!("Connection closed: {reason:?}");
 }
 
 /// 断线清理（5.3/5.4 节；对应 Java onClose 回调链）。
@@ -389,7 +401,7 @@ async fn on_connection_closed(
         ctx.players.remove_if_bound(player.id(), conn.id());
         return;
     }
-    info!(user_id = player.id(), "session suspended");
+    info!("Session suspended (user {})", player.id());
 }
 
 /// 处理单个帧。返回 false 表示应终止读循环。
@@ -401,7 +413,7 @@ async fn dispatch(
     let packet = match ServerBoundPacket::decode_frame(&frame) {
         Ok(p) => p,
         Err(e) => {
-            debug!("packet decode error: {e}");
+            debug!("Packet decode error: {e}");
             return false; // 未知包/解码失败 → 关闭连接
         }
     };

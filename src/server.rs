@@ -12,8 +12,9 @@ use crate::player::PlayerRegistry;
 use crate::room::RoomRegistry;
 use crate::session::SessionManager;
 use clap::Parser;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
 use tokio::sync::Notify;
 use tracing::info;
 
@@ -78,6 +79,8 @@ pub struct ServerContext {
     pub record_dir: Option<String>,
     /// 实际监听地址（run 中绑定后填入，格式 host:port）。
     pub listen_addr: RwLock<Option<String>>,
+    /// 活跃连接数（对应 Java `allChannels`，关闭日志用）。
+    pub active_connections: AtomicUsize,
     /// server 完全停止后通知（测试用）。
     stopped: Notify,
     shutdown: Notify,
@@ -120,6 +123,7 @@ impl ServerContext {
             events: EventBus::new(),
             extensions: Extensions::default(),
             listen_addr: RwLock::new(None),
+            active_connections: AtomicUsize::new(0),
             stopped: Notify::new(),
             shutdown: Notify::new(),
             shutdown_requested: AtomicBool::new(false),
@@ -131,6 +135,11 @@ impl ServerContext {
     pub fn request_shutdown(&self) {
         self.shutdown_requested.store(true, Ordering::SeqCst);
         self.shutdown.notify_waiters();
+    }
+
+    /// 是否已请求关闭（控制台 is_running 用）。
+    pub fn is_shutdown_requested(&self) -> bool {
+        self.shutdown_requested.load(Ordering::SeqCst)
     }
 
     pub async fn wait_shutdown(&self) {
@@ -145,20 +154,27 @@ impl ServerContext {
 
 /// 启动服务端（1.1 节；对应 Java `Server.main` + 生命周期事件）。
 pub async fn run(args: ServerArgs) -> std::io::Result<()> {
+    let boot_start = Instant::now();
+    info!("Booting up Phira Server...");
+
     let ctx = ServerContext::new(args);
+    info!("Default language: {}", ctx.args.language);
 
     // 控制台命令线程（对应 Java CommandService）
     crate::command::start_command_thread(ctx.clone());
 
+    info!("Initializing network...");
     let listener =
         tokio::net::TcpListener::bind(format!("{}:{}", ctx.args.host, ctx.args.port)).await?;
     *ctx.listen_addr.write().unwrap() = Some(listener.local_addr()?.to_string());
-    info!(host = %ctx.args.host, port = ctx.args.port, "phira-mp server started");
+    info!("Listening on {}:{}", ctx.args.host, ctx.args.port);
     ctx.events
         .post(crate::events::SERVER_LIFECYCLE, crate::events::ServerLifecycleEvent {
             phase: crate::events::LifecyclePhase::Started,
         })
         .await;
+    info!("Done ({:.3}s)!", boot_start.elapsed().as_secs_f64());
+    info!("Server is running. Type 'stop' to stop.");
 
     // ctrl-c → 优雅关闭
     {
@@ -183,7 +199,7 @@ pub async fn run(args: ServerArgs) -> std::io::Result<()> {
                         });
                     }
                     Err(e) => {
-                        tracing::warn!("accept error: {e}");
+                        tracing::warn!("Accept error: {e}");
                     }
                 }
             }
@@ -193,19 +209,46 @@ pub async fn run(args: ServerArgs) -> std::io::Result<()> {
         }
     }
 
-    // 关闭流程（1.3 节）：逐玩家踢出（离房语义由断线清理完成）
+    // 关闭流程（1.3 节；对齐 Java Server.shutdown 日志序列）：
+    // Shutting down... → Kicking {n} player(s)... → Closing {m} channel(s)...
+    // → Channels closed. → Uptime → Shutdown completed in {ms}ms. Goodbye!
     ctx.events
         .post(crate::events::SERVER_LIFECYCLE, crate::events::ServerLifecycleEvent {
             phase: crate::events::LifecyclePhase::Stopping,
         })
         .await;
-    info!("server stopping: kicking all players");
+    let shutdown_start = Instant::now();
+    info!("Shutting down...");
+    let kick_count = ctx.players.online_players().len();
+    // 对应 Java allChannels：server channel + 活跃连接
+    let channel_count = ctx.active_connections.load(Ordering::SeqCst) + 1;
+    if kick_count > 0 {
+        info!("Kicking {kick_count} player(s)...");
+    }
+    if channel_count > 0 {
+        info!("Closing {channel_count} channel(s)...");
+    }
     for player in ctx.players.online_players() {
         player.kick();
         player.connection().close().await;
     }
     drop(listener);
-    info!("server stopped");
+    // 等待连接任务退出（最多 10 秒，对应 Java close().awaitUninterruptibly(10s)）
+    if channel_count > 0 {
+        let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            while ctx.active_connections.load(Ordering::SeqCst) > 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+        info!("Channels closed.");
+    }
+    let uptime = boot_start.elapsed();
+    info!("Uptime: {}m {}s", uptime.as_secs() / 60, uptime.as_secs() % 60);
+    info!(
+        "Shutdown completed in {}ms. Goodbye!",
+        shutdown_start.elapsed().as_millis()
+    );
     ctx.events
         .post(crate::events::SERVER_LIFECYCLE, crate::events::ServerLifecycleEvent {
             phase: crate::events::LifecyclePhase::Stopped,

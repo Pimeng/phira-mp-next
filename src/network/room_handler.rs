@@ -53,7 +53,7 @@ impl RoomHandler {
     }
 
     fn kick(&self, ctx: &HandlerContext) -> HandleOutcome {
-        debug!(user_id = self.player.id(), "room stage: unexpected packet, kicking");
+        debug!("Room stage: unexpected packet, kicking (user {})", self.player.id());
         let _ = ctx;
         HandleOutcome::Close
     }
@@ -340,7 +340,7 @@ impl RoomHandler {
                             let dir = std::path::PathBuf::from(dir);
                             tokio::task::spawn_blocking(move || {
                                 if let Err(e) = phira_rec.write_to(&dir, crate::record::CompressionType::Zstd) {
-                                    tracing::warn!("record write failed: {e}");
+                                    tracing::warn!("Record write failed: {e}");
                                 }
                             });
                         }

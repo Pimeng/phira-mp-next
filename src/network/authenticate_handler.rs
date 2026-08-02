@@ -16,6 +16,23 @@ use tracing::info;
 
 const MAX_TOKEN_BYTES: usize = 256;
 
+/// 打码 token 关键部分（完整 token 属敏感信息，日志仅展示首尾 4 字符）。
+/// 假定 token 为 ASCII（JWT / Phira token）。
+fn mask_token(token: &str) -> String {
+    let bytes = token.as_bytes();
+    match bytes.len() {
+        0 => String::new(),
+        1..=4 => "*".repeat(bytes.len()),
+        n => {
+            let mut s = String::with_capacity(n);
+            s.push_str(&token[..4]);
+            s.push_str("***");
+            s.push_str(&token[n - 4..]);
+            s
+        }
+    }
+}
+
 pub struct AuthenticateHandler;
 
 impl AuthenticateHandler {
@@ -83,7 +100,7 @@ impl PacketHandler for AuthenticateHandler {
                 return HandleOutcome::Close;
             }
             let peer = ctx.conn.peer_addr().await;
-            info!(addr = %peer, "received token");
+            info!("{peer} sent his token [{}]", mask_token(&token));
 
             let info = match Self::resolve_user_info(ctx, &token).await {
                 Ok(i) => i,
@@ -162,7 +179,7 @@ impl PacketHandler for AuthenticateHandler {
             })
             .await;
 
-            info!(user_id = info.id, name = %info.name, "logged in");
+            info!("{peer} has logged in as [{}] {}", info.id, info.name);
             ctx.server.events.post(events::PLAYER_POST_LOGIN, events::PlayerPostLoginEvent { player: player.clone() }).await;
 
             // Switch：恢复挂起 → RoomHandler；否则 → PlayHandler

@@ -158,7 +158,7 @@ impl PhiraFetcher {
             }
             match req.send().await {
                 Ok(resp) if resp.status().is_success() => {
-                    debug!(path, status = %resp.status(), "phira fetch ok");
+                    debug!("Phira fetch ok: {path} ({})", resp.status());
                     return resp
                         .json::<T>()
                         .await
@@ -166,7 +166,7 @@ impl PhiraFetcher {
                 }
                 Ok(resp) => {
                     last_err = format!("status {}", resp.status());
-                    debug!(path, %last_err, "phira fetch non-2xx");
+                    debug!("Phira fetch non-2xx: {path} ({last_err})");
                     // 404 不重试，直接判为不存在
                     if resp.status() == reqwest::StatusCode::NOT_FOUND {
                         return Err(PhiraError::NotFound(path.to_string()));
@@ -174,10 +174,10 @@ impl PhiraFetcher {
                 }
                 Err(e) => {
                     last_err = e.to_string();
-                    debug!(path, %last_err, "phira fetch transport error");
+                    debug!("Phira fetch transport error: {path} ({last_err})");
                 }
             }
-            debug!(path, attempt, "phira fetch retry");
+            debug!("Phira fetch retry: {path} (attempt {})", attempt);
             tokio::time::sleep(Duration::from_millis(RETRY_BASE_MS * (attempt as u64 + 1))).await;
         }
         Err(PhiraError::Http(last_err))

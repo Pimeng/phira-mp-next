@@ -189,7 +189,7 @@ impl PacketHandler for PlayHandler {
                 }
                 _ => {
                     // 大厅阶段收到房间操作包 → 踢（对应 Java PlayHandler 无对应 handle 方法）
-                    debug!(user_id = self.player.id(), "play stage: unexpected packet");
+                    debug!("Play stage: unexpected packet (user {})", self.player.id());
                     HandleOutcome::Close
                 }
             }

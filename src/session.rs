@@ -94,7 +94,7 @@ impl SessionManager {
             let Some(session) = this.take_suspended_if_generation(user_id, generation) else {
                 return;
             };
-            tracing::info!(user_id, "session timeout, force leave");
+            tracing::info!("Session timeout, force leave (user {user_id})");
             if session.room.contains_member(user_id) {
                 let (_l, plan, _d) = session.room.leave(user_id);
                 crate::room::send_broadcasts(plan).await;

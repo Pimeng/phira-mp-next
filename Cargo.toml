@@ -19,11 +19,14 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"
+tracing-core = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+time = { version = "0.3", features = ["local-offset"] }
 clap = { version = "4", features = ["derive"] }
 lru = "0.12"
 futures = "0.3"
 zstd = "0.13"
+terminal-console = { path = "terminal-console" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }
