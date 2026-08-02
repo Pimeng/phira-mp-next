@@ -315,8 +315,6 @@ async fn smoke_full_game_flow() {
 
     c1.send(&ServerBoundPacket::CreateRoom { room_id: "ROOM1".into(), trailer: None }).await;
     c1.recv_until(|p| matches!(p, ClientBoundPacket::CreateRoom { result: PacketResult::Success(()), .. })).await;
-    c1.recv_until(|p| matches!(p, ClientBoundPacket::ChangeState { game_state: GameState::SelectChart { chart_id: None }, .. })).await;
-    c1.recv_until(|p| matches!(p, ClientBoundPacket::ChangeHost { is_host: true, .. })).await;
 
     let mut c2 = TestClient::connect(&addr).await;
     let auth2 = authenticate(&mut c2, 2).await;

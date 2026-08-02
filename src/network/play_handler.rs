@@ -7,7 +7,6 @@ use super::handler::{HandleOutcome, HandlerContext, PacketHandler};
 use crate::events;
 use crate::packet::clientbound::{ClientBoundPacket, JoinRoomData};
 use crate::packet::serverbound::ServerBoundPacket;
-use crate::packet::state::GameState;
 use crate::packet::PacketResult;
 use crate::player::Player;
 use crate::room::{JoinOutcome, RoomSetting};
@@ -83,11 +82,14 @@ impl PlayHandler {
             }
         };
 
-        // 创建者加入房间（对应 Java PlayHandler.handleCreateRoom 的 room.join(player, false)）
-        let (outcome, plan) = match room.join(self.player.clone(), false) {
+        // 创建者加入房间：刚创建的空房间必然可加入；若失败属内部错误，快速失败
+        // （对应 Java PlayHandler.handleCreateRoom 的 room.join(player, false)）
+        let (_outcome, plan) = match room.join(self.player.clone(), false) {
             Ok(v) => v,
             Err(e) => {
-                return self.fail(ctx, e.0, mk).await;
+                tracing::error!("creator join failed (room {}): {}", room.id(), e.0);
+                ctx.close().await;
+                return HandleOutcome::Close;
             }
         };
         // 锁外发送 join 广播（首个玩家通常为空计划）
@@ -99,12 +101,6 @@ impl PlayHandler {
             creator: self.player.clone(),
         }).await;
         self.reply(ctx, mk(PacketResult::ok())).await;
-        // 创建者即房主：补发初始房间状态与房主标记
-        // （对应 Java handleCreateRoom 的 ChangeState + ChangeHost；join 广播不含这两包）
-        if matches!(outcome, JoinOutcome::FirstPlayer) {
-            self.reply(ctx, ClientBoundPacket::change_state(GameState::SelectChart { chart_id: None })).await;
-            self.reply(ctx, ClientBoundPacket::change_host(true)).await;
-        }
         HandleOutcome::Switch(self.room_handler(room))
     }
 

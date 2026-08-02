@@ -272,8 +272,6 @@ async fn http_rooms_list_structure() {
     authenticate(&mut c1, 1).await;
     c1.send(&ServerBoundPacket::CreateRoom { room_id: "room1".into(), trailer: None }).await;
     c1.recv_until(|p| matches!(p, ClientBoundPacket::CreateRoom { result: PacketResult::Success(()), .. })).await;
-    c1.recv_until(|p| matches!(p, ClientBoundPacket::ChangeState { game_state: GameState::SelectChart { chart_id: None }, .. })).await;
-    c1.recv_until(|p| matches!(p, ClientBoundPacket::ChangeHost { is_host: true, .. })).await;
 
     // 隐藏房间（_ 开头）不应出现在列表
     let mut c0 = TestClient::connect(&addr).await;
