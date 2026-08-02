@@ -31,13 +31,9 @@ pub struct ServerArgs {
     #[arg(long, default_value = "0.0.0.0")]
     pub host: String,
 
-    /// HTTP API 偷听端口（0 = 禁用 HTTP 服务）
+    /// HTTP API 偷听端口（0 = 禁用 HTTP 服务；偷听地址复用 `host`）
     #[arg(long, default_value_t = 12347, value_parser = clap::value_parser!(u16).range(0..))]
     pub http_port: u16,
-
-    /// HTTP API 绑定地址
-    #[arg(long, default_value = "0.0.0.0")]
-    pub http_host: String,
 
     /// 启用 HAProxy PROXY 协议
     #[arg(long, default_value_t = false)]
@@ -237,7 +233,7 @@ pub async fn run(args: ServerArgs) -> std::io::Result<()> {
     // HTTP 查询 API（GET /api/rooms）
     if ctx.args.http_port > 0 {
         log_info!(&ctx.i18n, None, "LOG_INIT_HTTP");
-        crate::http::start(ctx.clone(), ctx.args.http_host.clone(), ctx.args.http_port).await?;
+        crate::http::start(ctx.clone(), ctx.args.host.clone(), ctx.args.http_port).await?;
     }
     ctx.events
         .post(crate::events::SERVER_LIFECYCLE, crate::events::ServerLifecycleEvent {

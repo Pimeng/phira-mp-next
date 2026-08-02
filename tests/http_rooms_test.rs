@@ -214,7 +214,6 @@ async fn start_server_with_http(phira_addr: &str) -> (Arc<phira_mp::server::Serv
         host: "127.0.0.1".into(),
         proxy_protocol: false,
         http_port,
-        http_host: "127.0.0.1".into(),
         language: "zh-CN".into(),
         session_timeout: 300,
         phira_api: format!("http://{phira_addr}/"),
