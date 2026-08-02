@@ -164,7 +164,7 @@ impl Room for LocalRoom {
     ) -> GameResult<(JoinOutcome, Broadcast)> {
         let mut g = self.lock();
         if g.destroyed {
-            return Err(super::GameError("error.room_not_found"));
+            return Err(super::GameError("ERROR_ROOM_NOT_FOUND"));
         }
         if g.players.iter().any(|p| p.id() == player.id())
             || g.monitors.iter().any(|p| p.id() == player.id())
@@ -173,10 +173,10 @@ impl Room for LocalRoom {
         }
         if !is_monitor {
             if g.players.len() >= g.setting.max_player {
-                return Err(super::GameError("error.room_full"));
+                return Err(super::GameError("ERROR_ROOM_FULL"));
             }
             if g.setting.locked && !g.players.is_empty() {
-                return Err(super::GameError("error.room_locked"));
+                return Err(super::GameError("ERROR_ROOM_LOCKED"));
             }
         }
 
@@ -265,7 +265,7 @@ impl Room for LocalRoom {
         if self.is_host(user_id) {
             Ok(())
         } else {
-            Err(super::GameError("error.permission_denied"))
+            Err(super::GameError("ERROR_PERMISSION_DENIED"))
         }
     }
 
@@ -326,7 +326,7 @@ impl Room for LocalRoom {
                     })
                 }
             }
-            _ => Err(super::GameError("error.invalid_state")),
+            _ => Err(super::GameError("ERROR_INVALID_STATE")),
         }
     }
 
@@ -490,7 +490,7 @@ mod tests {
         let room = LocalRoom::new("R2", setting, || {});
         room.join(player(1, "A"), false).unwrap();
         let err = room.join(player(2, "B"), false).unwrap_err();
-        assert_eq!(err.0, "error.room_full");
+        assert_eq!(err.0, "ERROR_ROOM_FULL");
         room.join(player(3, "M"), true).unwrap();
         assert!(room.is_monitor_user(3));
     }
@@ -543,11 +543,11 @@ mod tests {
         room.join(player(1, "A"), false).unwrap();
         room.toggle_lock(1).unwrap();
         let err = room.join(player(2, "B"), false).unwrap_err();
-        assert_eq!(err.0, "error.room_locked");
+        assert_eq!(err.0, "ERROR_ROOM_LOCKED");
         room.join(player(3, "M"), true).unwrap();
         room.toggle_lock(1).unwrap();
         room.join(player(2, "B"), false).unwrap();
-        assert_eq!(room.toggle_lock(2).unwrap_err().0, "error.permission_denied");
+        assert_eq!(room.toggle_lock(2).unwrap_err().0, "ERROR_PERMISSION_DENIED");
     }
 
     #[test]
@@ -567,7 +567,7 @@ mod tests {
         let room = make_room();
         room.join(player(1, "A"), false).unwrap();
         room.join(player(2, "B"), false).unwrap();
-        assert_eq!(room.toggle_cycle(2).unwrap_err().0, "error.permission_denied");
+        assert_eq!(room.toggle_cycle(2).unwrap_err().0, "ERROR_PERMISSION_DENIED");
         let plan = room.toggle_cycle(1).unwrap();
         assert!(room.setting().cycle);
         match message_for(&plan, 2) {
@@ -598,7 +598,7 @@ mod tests {
         let setting = RoomSetting { chat: false, ..Default::default() };
         let room = LocalRoom::new("RN", setting, || {});
         room.join(player(1, "A"), false).unwrap();
-        assert_eq!(room.chat(1, "x".into()).unwrap_err().0, "error.chat_not_enabled");
+        assert_eq!(room.chat(1, "x".into()).unwrap_err().0, "ERROR_CHAT_NOT_ENABLED");
     }
 
     // ---------------- 选谱 ----------------
@@ -608,7 +608,7 @@ mod tests {
         let room = make_room();
         room.join(player(1, "A"), false).unwrap();
         room.join(player(2, "B"), false).unwrap();
-        assert_eq!(room.validate_select_chart(2).unwrap_err().0, "error.permission_denied");
+        assert_eq!(room.validate_select_chart(2).unwrap_err().0, "ERROR_PERMISSION_DENIED");
         room.validate_select_chart(1).unwrap();
         let plan = room.commit_select_chart(1, 42, "Chart".into()).unwrap();
         match room.game_state_protocol() {
@@ -632,7 +632,7 @@ mod tests {
         room.join(player(1, "A"), false).unwrap();
         room.commit_select_chart(1, 1, "C".into()).unwrap();
         room.require_start(1).unwrap(); // 单人直接 Playing
-        assert_eq!(room.validate_select_chart(1).unwrap_err().0, "error.invalid_state");
+        assert_eq!(room.validate_select_chart(1).unwrap_err().0, "ERROR_INVALID_STATE");
     }
 
     // ---------------- 开局/就绪（对应 RoomWaitForReadyStateTest） ----------------
@@ -661,7 +661,7 @@ mod tests {
         let (plan, started) = room.ready(2).unwrap();
         assert!(started);
         assert!(matches!(room.game_state_protocol(), GameState::Playing));
-        assert_eq!(room.cancel_ready(1).unwrap_err().0, "error.invalid_state");
+        assert_eq!(room.cancel_ready(1).unwrap_err().0, "ERROR_INVALID_STATE");
         // ready 广播 Ready{user:2}
         assert!(matches!(message_for(&plan, 1), Some(Message::Ready { user: 2 })));
     }
@@ -703,9 +703,9 @@ mod tests {
         room.join(player(1, "A"), false).unwrap();
         room.commit_select_chart(1, 1, "C".into()).unwrap();
         room.require_start(1).unwrap(); // → Playing
-        assert_eq!(room.require_start(1).unwrap_err().0, "error.invalid_state");
-        assert_eq!(room.ready(1).unwrap_err().0, "error.invalid_state");
-        assert_eq!(room.cancel_ready(1).unwrap_err().0, "error.invalid_state");
+        assert_eq!(room.require_start(1).unwrap_err().0, "ERROR_INVALID_STATE");
+        assert_eq!(room.ready(1).unwrap_err().0, "ERROR_INVALID_STATE");
+        assert_eq!(room.cancel_ready(1).unwrap_err().0, "ERROR_INVALID_STATE");
     }
 
     #[test]
@@ -817,8 +817,8 @@ mod tests {
         let room = make_room();
         room.join(player(1, "A"), false).unwrap();
         // SelectChart 状态
-        assert_eq!(room.commit_played(1, 1, 1.0, true).err().unwrap().0, "error.invalid_state");
-        assert_eq!(room.commit_abort(1).err().unwrap().0, "error.invalid_state");
+        assert_eq!(room.commit_played(1, 1, 1.0, true).err().unwrap().0, "ERROR_INVALID_STATE");
+        assert_eq!(room.commit_abort(1).err().unwrap().0, "ERROR_INVALID_STATE");
     }
 
     #[test]

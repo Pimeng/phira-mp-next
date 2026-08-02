@@ -246,7 +246,7 @@ impl RoomRegistry {
         let mut map = self.rooms.lock().unwrap();
         if let Some(existing) = map.get(room_id).and_then(|w| w.upgrade())
             && !existing.is_destroyed() {
-                return Err(GameError("error.room_already_exists"));
+                return Err(GameError("ERROR_ROOM_ALREADY_EXISTS"));
             }
         let rid = room_id.to_string();
         let on_destroy: Box<dyn Fn() + Send + Sync> = {

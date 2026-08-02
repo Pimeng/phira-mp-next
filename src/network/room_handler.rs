@@ -88,7 +88,7 @@ impl RoomHandler {
     async fn on_leave_room(&mut self, ctx: &HandlerContext) -> HandleOutcome {
         let (left, plan, _destroyed) = self.room.leave(self.player.id());
         if !left {
-            let msg = ctx.server.i18n.message(self.player.language().as_deref(), "error.room_not_found");
+            let msg = ctx.server.i18n.message(self.player.language().as_deref(), "ERROR_ROOM_NOT_FOUND");
             ctx.send(ClientBoundPacket::leave_room_result(PacketResult::failed(msg))).await;
             return HandleOutcome::Ok;
         }
@@ -174,7 +174,7 @@ impl RoomHandler {
             },
         };
         let Some(chart) = chart else {
-            ctx.send(mk(PacketResult::failed(i18n.message(lang.as_deref(), "error.chart_not_found")))).await;
+            ctx.send(mk(PacketResult::failed(i18n.message(lang.as_deref(), "ERROR_CHART_NOT_FOUND")))).await;
             return HandleOutcome::Ok;
         };
 
@@ -311,7 +311,7 @@ impl RoomHandler {
             None => fetch_record(ctx, record_id).await,
         };
         let Some(record) = record else {
-            ctx.send(mk(PacketResult::failed(i18n.message(lang.as_deref(), "error.record_not_found")))).await;
+            ctx.send(mk(PacketResult::failed(i18n.message(lang.as_deref(), "ERROR_RECORD_NOT_FOUND")))).await;
             return HandleOutcome::Ok;
         };
 

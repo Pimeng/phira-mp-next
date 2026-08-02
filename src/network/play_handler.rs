@@ -56,10 +56,10 @@ impl PlayHandler {
         let mk = |r: PacketResult<()>| ClientBoundPacket::create_room_result(r);
 
         if room_id.is_empty() {
-            return self.fail(ctx, "error.invalid_room_id", mk).await;
+            return self.fail(ctx, "ERROR_INVALID_ROOM_ID", mk).await;
         }
         if self.last_create.elapsed() < CREATE_ROOM_COOLDOWN {
-            return self.fail(ctx, "error.rate_limited", mk).await;
+            return self.fail(ctx, "ERROR_RATE_LIMITED", mk).await;
         }
 
         // RoomPreCreateEvent：可改写 setting，可取消
@@ -112,7 +112,7 @@ impl PlayHandler {
         let mk = |r: PacketResult<JoinRoomData>| ClientBoundPacket::join_room_result(r);
 
         let Some(room) = ctx.server.rooms.find_room(&room_id) else {
-            let msg = i18n.message(lang.as_deref(), "error.room_not_found");
+            let msg = i18n.message(lang.as_deref(), "ERROR_ROOM_NOT_FOUND");
             self.reply(ctx, mk(PacketResult::failed(msg))).await;
             return HandleOutcome::Ok;
         };

@@ -140,7 +140,7 @@ impl PacketHandler for AuthenticateHandler {
             if let Some(old) = old_conn.filter(|c| !c.is_closed()) {
                 old.send(ClientBoundPacket::message(crate::packet::message::Message::Chat {
                     user: 0,
-                    content: ctx.server.i18n.message(player.language().as_deref(), "error.logged_in_elsewhere"),
+                    content: ctx.server.i18n.message(player.language().as_deref(), "ERROR_LOGGED_IN_ELSEWHERE"),
                 }))
                 .await;
                 old.mark_duplicate();

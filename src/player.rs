@@ -449,7 +449,7 @@ impl PlayerRegistry {
                 && p.bound_connection()
                     .map_or(true, |b| !b.same_connection(conn));
             if online {
-                return Err("error.player_already_online".to_string());
+                return Err("ERROR_PLAYER_ALREADY_ONLINE".to_string());
             }
         }
 
@@ -483,7 +483,7 @@ impl PlayerRegistry {
             |player, new_conn| {
                 // 换绑：取出旧连接，若存活由调用方踢旧
                 local_of(player)
-                    .ok_or_else(|| "error.player_type_unsupported".to_string())
+                    .ok_or_else(|| "ERROR_PLAYER_TYPE_UNSUPPORTED".to_string())
                     .map(|l| {
                         let c = new_conn.expect("resume requires a connection");
                         Some(l.bind_connection(c))

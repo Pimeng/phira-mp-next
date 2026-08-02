@@ -138,8 +138,8 @@ impl SessionManager {
     pub fn resume(&self, player: &Arc<dyn Player>) -> Result<SuspendedRoomSession, ResumeFailed> {
         match self.take_suspended(player.id()) {
             Some(s) if s.room.contains_member(player.id()) => Ok(s),
-            Some(_) => Err(ResumeFailed("error.session_expired")),
-            None => Err(ResumeFailed("error.session_not_found")),
+            Some(_) => Err(ResumeFailed("ERROR_SESSION_EXPIRED")),
+            None => Err(ResumeFailed("ERROR_SESSION_NOT_FOUND")),
         }
     }
 

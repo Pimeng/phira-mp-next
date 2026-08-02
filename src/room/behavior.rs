@@ -56,7 +56,7 @@ pub(crate) fn toggle_cycle(inner: &Mutex<Inner>) -> GameResult<Broadcast> {
 pub(crate) fn chat(inner: &Mutex<Inner>, user_id: i32, content: String) -> GameResult<Broadcast> {
     let g = inner.lock().unwrap();
     if !g.setting.chat {
-        return Err(GameError("error.chat_not_enabled"));
+        return Err(GameError("ERROR_CHAT_NOT_ENABLED"));
     }
     Ok(broadcast_all(
         &g,
@@ -68,7 +68,7 @@ pub(crate) fn chat(inner: &Mutex<Inner>, user_id: i32, content: String) -> GameR
 pub(crate) fn validate_select_chart(inner: &Mutex<Inner>) -> GameResult<()> {
     let g = inner.lock().unwrap();
     if !matches!(g.state, RoomState::SelectChart { .. }) {
-        return Err(GameError("error.invalid_state"));
+        return Err(GameError("ERROR_INVALID_STATE"));
     }
     Ok(())
 }
@@ -82,7 +82,7 @@ pub(crate) fn commit_select_chart(
 ) -> GameResult<Broadcast> {
     let mut g = inner.lock().unwrap();
     let RoomState::SelectChart { chart_id: cid, chart_name: cn } = &mut g.state else {
-        return Err(GameError("error.invalid_state"));
+        return Err(GameError("ERROR_INVALID_STATE"));
     };
     *cid = Some(chart_id);
     *cn = Some(chart_name.clone());
@@ -110,7 +110,7 @@ pub(crate) fn require_start(inner: &Mutex<Inner>, user_id: i32) -> GameResult<Br
     let total = g.players.len() + g.monitors.len();
     let (chart_id, chart_name) = match &g.state {
         RoomState::SelectChart { chart_id, chart_name } => (*chart_id, chart_name.clone()),
-        _ => return Err(GameError("error.invalid_state")),
+        _ => return Err(GameError("ERROR_INVALID_STATE")),
     };
 
     let mut plan = Broadcast::new();
@@ -159,7 +159,7 @@ pub(crate) fn ready(inner: &Mutex<Inner>, user_id: i32) -> GameResult<(Broadcast
 
     let (all_ready, cid, cn) = {
         let RoomState::WaitForReady { ready, chart_id, chart_name } = &mut g.state else {
-            return Err(GameError("error.invalid_state"));
+            return Err(GameError("ERROR_INVALID_STATE"));
         };
         ready.insert(user_id);
         let all_ready = online_ids.iter().all(|id| ready.contains(id)) && !online_ids.is_empty();
@@ -186,7 +186,7 @@ pub(crate) fn ready(inner: &Mutex<Inner>, user_id: i32) -> GameResult<(Broadcast
 pub(crate) fn cancel_ready(inner: &Mutex<Inner>, user_id: i32) -> GameResult<Broadcast> {
     let mut g = inner.lock().unwrap();
     let RoomState::WaitForReady { ready, .. } = &mut g.state else {
-        return Err(GameError("error.invalid_state"));
+        return Err(GameError("ERROR_INVALID_STATE"));
     };
     ready.remove(&user_id);
     Ok(broadcast_all(
@@ -205,7 +205,7 @@ pub(crate) fn commit_played(
 ) -> GameResult<CommitGameOutcome> {
     let mut g = inner.lock().unwrap();
     let RoomState::Playing { done, .. } = &mut g.state else {
-        return Err(GameError("error.invalid_state"));
+        return Err(GameError("ERROR_INVALID_STATE"));
     };
     if !done.insert(user_id) {
         return Ok(CommitGameOutcome {
@@ -256,7 +256,7 @@ pub(crate) fn commit_played(
 pub(crate) fn commit_abort(inner: &Mutex<Inner>, user_id: i32) -> GameResult<CommitGameOutcome> {
     let mut g = inner.lock().unwrap();
     let RoomState::Playing { done, .. } = &mut g.state else {
-        return Err(GameError("error.invalid_state"));
+        return Err(GameError("ERROR_INVALID_STATE"));
     };
     if !done.insert(user_id) {
         return Ok(CommitGameOutcome {
