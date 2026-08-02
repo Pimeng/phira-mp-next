@@ -1,15 +1,17 @@
 //! PlayerConnection（2.4、5.4、7.1 节）。
 //!
 //! - 每连接一个 writer 任务（mpsc 队列），关闭时先 drain 避免丢帧。
-//! - 读循环：帧解码 → 包解码 → 串行交给当前 PacketHandler（take/put 模式，
-//!   避免锁/MutexGuard 跨 await）。
+//! - 读循环：帧解码 → `PacketReceiveEvent`（可取消）→ 串行交给当前
+//!   `PacketHandler`（take/put 模式，避免锁/MutexGuard 跨 await）。
+//! - 出站：`PacketSendEvent`（可取消）→ writer。
+//! - 初始 handler 由 [`spawn_connection`] 工厂参数决定（默认 `AuthenticateHandler`）；
+//!   阶段切换抛 `PlayerSwitchPacketHandlerEvent`（可替换/装饰新 handler）。
 //! - 断开原因（ConnectState）：QUIT / KICK / TIMEOUT / DUPLICATE / ERROR。
 
-use crate::bytes::Encode;
 use crate::frame::FrameDecoder;
 use crate::network::handler::{HandleOutcome, HandlerContext, PacketHandler};
 use crate::network::{HANDSHAKE_TIMEOUT, PROTOCOL_VERSION, READ_TIMEOUT};
-use crate::packet::clientbound::ClientBoundPacket;
+use crate::packet::clientbound::{ClientBoundPacket, SharedFrame};
 use crate::packet::serverbound::ServerBoundPacket;
 use ::bytes::Bytes;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
@@ -47,6 +49,7 @@ static NEXT_CONN_ID: AtomicU64 = AtomicU64::new(1);
 
 pub(crate) enum WriterMsg {
     Frame(Bytes),
+    Shared(SharedFrame),
     Close,
 }
 
@@ -71,15 +74,33 @@ impl ConnectionHandle {
         self.inner.id
     }
 
+    /// 发送一个包（经 `PacketSendEvent`，可取消）。
     pub async fn send(&self, packet: ClientBoundPacket) {
         if self.inner.closed.load(Ordering::SeqCst) {
             return;
         }
-        let mut buf = bytes::BytesMut::new();
-        packet.encode(&mut buf);
-        let frame = crate::frame::encode_frame(&buf);
-        // 发送失败（writer 已退出）忽略
-        let _ = self.inner.tx.send(WriterMsg::Frame(frame.freeze()));
+        // PacketSendEvent：可取消（对应 Java PlayerConnection.send 的 PacketSendEvent）
+        if let Some(ctx) = crate::server::global_ctx() {
+            let ev = crate::events::PacketSendEvent {
+                packet: packet.clone(),
+                cancel_reason: None,
+            };
+            let ev = ctx.events.post_mut(crate::events::PACKET_SEND, ev).await;
+            if ev.is_cancelled() {
+                return;
+            }
+        }
+        let frame = crate::packet::clientbound::encode_packet(&packet);
+        let _ = self.inner.tx.send(WriterMsg::Frame(frame));
+    }
+
+    /// 发送预编码共享帧（广播零拷贝路径；不触发 PacketSendEvent——
+    /// 广播已在事件层决策过，此处是纯字节转发）。
+    pub async fn send_frame(&self, frame: SharedFrame) {
+        if self.inner.closed.load(Ordering::SeqCst) {
+            return;
+        }
+        let _ = self.inner.tx.send(WriterMsg::Shared(frame));
     }
 
     /// 主动关闭（踢人/认证失败等）。不立即改 state，由调用方先标记。
@@ -95,8 +116,9 @@ impl ConnectionHandle {
         self.inner.state.store(3, Ordering::SeqCst);
     }
 
+    /// 连接是否已关闭（writer 任务退出置位，或对端断开导致 tx 失败）。
     pub fn is_closed(&self) -> bool {
-        self.inner.closed.load(Ordering::SeqCst)
+        self.inner.closed.load(Ordering::SeqCst) || self.inner.tx.is_closed()
     }
 
     pub fn disconnect_reason(&self) -> DisconnectReason {
@@ -136,10 +158,13 @@ impl ConnectionHandle {
 }
 
 /// 连接处理入口：装配（可选 PROXY）→ 握手 → 帧/包循环 → 清理。
+///
+/// `initial_handler` 决定第一个阶段处理器（对应 Java 接管连接 handler 的能力）。
 pub async fn spawn_connection(
     mut stream: TcpStream,
     ctx: Arc<crate::server::ServerContext>,
     proxy_protocol: bool,
+    initial_handler: Box<dyn PacketHandler>,
 ) {
     let _ = stream.set_nodelay(true);
     let conn_id = NEXT_CONN_ID.fetch_add(1, Ordering::Relaxed);
@@ -205,11 +230,23 @@ pub async fn spawn_connection(
                         break;
                     }
                 }
+                Some(WriterMsg::Shared(data)) => {
+                    tracing::trace!(conn_id, len = data.len(), "writer shared frame");
+                    if write_half.write_all(&data).await.is_err() {
+                        break;
+                    }
+                }
                 Some(WriterMsg::Close) => {
                     // drain 剩余帧
                     while let Ok(msg) = rx.try_recv() {
-                        if let WriterMsg::Frame(data) = msg {
-                            let _ = write_half.write_all(&data).await;
+                        match msg {
+                            WriterMsg::Frame(data) => {
+                                let _ = write_half.write_all(&data).await;
+                            }
+                            WriterMsg::Shared(data) => {
+                                let _ = write_half.write_all(&data).await;
+                            }
+                            WriterMsg::Close => {}
                         }
                     }
                     break;
@@ -227,9 +264,7 @@ pub async fn spawn_connection(
         conn: conn.clone(),
         server: ctx.clone(),
     });
-    let mut handler: Option<Box<dyn PacketHandler>> = Some(Box::new(
-        crate::network::auth::AuthenticateHandler::new(),
-    ));
+    let mut handler: Option<Box<dyn PacketHandler>> = Some(initial_handler);
     let mut frame_dec = FrameDecoder::new();
     if !pending.is_empty() {
         frame_dec.feed(&pending);
@@ -237,7 +272,6 @@ pub async fn spawn_connection(
     let mut read_buf = [0u8; 8192];
 
     loop {
-        // 先消化已缓冲的帧
         match frame_dec.next_frame() {
             Ok(Some(frame)) => {
                 if !dispatch(frame, &mut handler, &handler_ctx).await {
@@ -264,9 +298,8 @@ pub async fn spawn_connection(
                 break;
             }
             Err(_) => {
-                // 读超时：若已有关闭请求则安静退出；否则标记 TIMEOUT
                 if inner.state.load(Ordering::SeqCst) == 0 {
-                    inner.state.store(2, Ordering::SeqCst);
+                    inner.state.store(2, Ordering::SeqCst); // TIMEOUT
                 }
                 break;
             }
@@ -280,14 +313,83 @@ pub async fn spawn_connection(
         let _ = inner.tx.send(WriterMsg::Close);
     }
 
-    // 断线清理：会话挂起 / 玩家移除（P4）
+    // 断线清理（对应 Java resolvePlayer closeBinder 注册的 onClose 回调）：
+    // PlayerDisconnectEvent → 换绑跳过 → 未入房移除 → Monitor 离开 → 可挂起则挂起。
     let reason = conn.disconnect_reason();
-    if let Some(h) = handler.as_ref() {
-        if let Some(player) = h.player_ref() {
-            ctx.on_connection_closed(&conn, &player, h.room_ref(), reason).await;
+    if let Some(h) = handler.as_ref()
+        && let Some(player) = h.player_ref() {
+            on_connection_closed(&ctx, &conn, &player, h.room_ref(), h.is_suspendable_room_holder(), reason).await;
         }
-    }
     info!(conn_id, ?reason, "connection closed");
+}
+
+/// 断线清理（5.3/5.4 节；对应 Java onClose 回调链）。
+async fn on_connection_closed(
+    ctx: &Arc<crate::server::ServerContext>,
+    conn: &ConnectionHandle,
+    player: &Arc<dyn crate::player::Player>,
+    room: Option<Arc<dyn crate::room::Room>>,
+    suspendable: bool,
+    reason: DisconnectReason,
+) {
+    // PlayerDisconnectEvent
+    ctx.events
+        .post(crate::events::PLAYER_DISCONNECT, crate::events::PlayerDisconnectEvent {
+            player: player.clone(),
+            reason,
+        })
+        .await;
+
+    // 已换绑/顶号：本连接不再代表该玩家 → 跳过
+    let same_conn = crate::player::local_of(player)
+        .map(|l| l.connection().id() == conn.id())
+        .unwrap_or(true);
+    if !same_conn {
+        return;
+    }
+
+    let Some(room) = room else {
+        // 未入房：直接移除注册
+        ctx.players.remove_if_bound(player.id(), conn.id());
+        return;
+    };
+
+    // Monitor 不挂起，直接离开（对应 Java SuspendableRoomHolder 为 false）
+    if !suspendable || room.is_monitor_user(player.id()) {
+        let (_l, plan, _d) = room.leave(player.id());
+        crate::room::send_broadcasts(plan).await;
+        ctx.players.remove_if_bound(player.id(), conn.id());
+        return;
+    }
+
+    // 可挂起：PlayerSessionSuspendEvent（可取消→直接退房）→ 挂起
+    let ev = crate::events::PlayerSessionSuspendEvent {
+        player: player.clone(),
+        room: room.clone(),
+        cancel_reason: None,
+    };
+    let ev = ctx
+        .events
+        .post_mut(crate::events::PLAYER_SESSION_SUSPEND, ev)
+        .await;
+    if ev.is_cancelled() {
+        let (_l, plan, _d) = room.leave(player.id());
+        crate::room::send_broadcasts(plan).await;
+        ctx.players.remove_if_bound(player.id(), conn.id());
+        return;
+    }
+
+    let uid = player.id();
+    let cid = conn.id();
+    let ctx2 = ctx.clone();
+    let remover = move || {
+        ctx2.players.remove_if_bound(uid, cid);
+    };
+    if ctx.sessions.suspend(player.clone(), room, remover).await.is_err() {
+        ctx.players.remove_if_bound(player.id(), conn.id());
+        return;
+    }
+    info!(user_id = player.id(), "session suspended");
 }
 
 /// 处理单个帧。返回 false 表示应终止读循环。
@@ -304,6 +406,23 @@ async fn dispatch(
         }
     };
 
+    // PacketReceiveEvent：可取消（对应 Java PlayerConnection.channelRead 的 PacketReceiveEvent）
+    let packet = {
+        let ev = crate::events::PacketReceiveEvent {
+            packet,
+            cancel_reason: None,
+        };
+        let ev = ctx
+            .server
+            .events
+            .post_mut(crate::events::PACKET_RECEIVE, ev)
+            .await;
+        if ev.is_cancelled() {
+            return true; // 丢弃包，连接保持
+        }
+        ev.packet
+    };
+
     // take/put 模式：避免借用跨 await 问题，同时支持 Switch 语义
     let mut h = match handler.take() {
         Some(h) => h,
@@ -316,13 +435,24 @@ async fn dispatch(
             true
         }
         HandleOutcome::Switch(next) => {
-            *handler = Some(next);
+            // PlayerSwitchPacketHandlerEvent：可替换/装饰新 handler；
+            // 事件消费了 handler（置空）→ 保持旧 handler。
+            let player = next.player_ref();
+            let ev = crate::events::PlayerSwitchPacketHandlerEvent {
+                player,
+                new_handler: Some(next),
+            };
+            let mut ev = ctx
+                .server
+                .events
+                .post_mut(crate::events::PLAYER_SWITCH_PACKET_HANDLER, ev)
+                .await;
+            *handler = Some(ev.new_handler.take().unwrap_or(h));
             true
         }
         HandleOutcome::Close => {
             ctx.conn.close().await;
-            // 把 handler 放回，保证清理阶段能取到 player/room
-            *handler = Some(h);
+            *handler = Some(h); // 放回，保证清理阶段能取到 player/room
             false
         }
     }

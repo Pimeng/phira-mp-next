@@ -110,63 +110,61 @@ impl ServerBoundPacket {
     }
 }
 
-/// 编码辅助（Trailer 原样写回）。
-pub(crate) fn encode_with_trailer(
+/// 编码辅助：直接写入调用方缓冲（零中间拷贝）。
+fn encode_with_trailer(
+    out: &mut BytesMut,
     id: u8,
     body: impl FnOnce(&mut BytesMut),
     trailer: &Option<Bytes>,
-) -> BytesMut {
-    let mut out = BytesMut::new();
-    bytes::write_u8(&mut out, id);
-    body(&mut out);
-    crate::packet::put_trailer(&mut out, trailer);
-    out
+) {
+    bytes::write_u8(out, id);
+    body(out);
+    crate::packet::put_trailer(out, trailer);
 }
 
 impl Encode for ServerBoundPacket {
     fn encode(&self, buf: &mut BytesMut) {
-        let encoded: BytesMut = match self {
-            ServerBoundPacket::Ping => encode_with_trailer(0x00, |_| {}, &None),
+        match self {
+            ServerBoundPacket::Ping => encode_with_trailer(buf, 0x00, |_| {}, &None),
             ServerBoundPacket::Authenticate { token, trailer } => {
-                encode_with_trailer(0x01, |b| bytes::write_string(b, token), trailer)
+                encode_with_trailer(buf, 0x01, |b| bytes::write_string(b, token), trailer)
             }
             ServerBoundPacket::Chat { message, trailer } => {
-                encode_with_trailer(0x02, |b| bytes::write_string(b, message), trailer)
+                encode_with_trailer(buf, 0x02, |b| bytes::write_string(b, message), trailer)
             }
             ServerBoundPacket::Touches { frames, trailer } => {
-                encode_with_trailer(0x03, |b| bytes::write_list(b, frames), trailer)
+                encode_with_trailer(buf, 0x03, |b| bytes::write_list(b, frames), trailer)
             }
             ServerBoundPacket::Judges { judges, trailer } => {
-                encode_with_trailer(0x04, |b| bytes::write_list(b, judges), trailer)
+                encode_with_trailer(buf, 0x04, |b| bytes::write_list(b, judges), trailer)
             }
             ServerBoundPacket::CreateRoom { room_id, trailer } => {
-                encode_with_trailer(0x05, |b| bytes::write_string(b, room_id), trailer)
+                encode_with_trailer(buf, 0x05, |b| bytes::write_string(b, room_id), trailer)
             }
             ServerBoundPacket::JoinRoom { room_id, monitor, trailer } => {
-                encode_with_trailer(0x06, |b| {
+                encode_with_trailer(buf, 0x06, |b| {
                     bytes::write_string(b, room_id);
                     bytes::write_bool(b, *monitor);
                 }, trailer)
             }
-            ServerBoundPacket::LeaveRoom { trailer } => encode_with_trailer(0x07, |_| {}, trailer),
+            ServerBoundPacket::LeaveRoom { trailer } => encode_with_trailer(buf, 0x07, |_| {}, trailer),
             ServerBoundPacket::LockRoom { lock, trailer } => {
-                encode_with_trailer(0x08, |b| bytes::write_bool(b, *lock), trailer)
+                encode_with_trailer(buf, 0x08, |b| bytes::write_bool(b, *lock), trailer)
             }
             ServerBoundPacket::CycleRoom { cycle, trailer } => {
-                encode_with_trailer(0x09, |b| bytes::write_bool(b, *cycle), trailer)
+                encode_with_trailer(buf, 0x09, |b| bytes::write_bool(b, *cycle), trailer)
             }
             ServerBoundPacket::SelectChart { id, trailer } => {
-                encode_with_trailer(0x0A, |b| bytes::write_i32(b, *id), trailer)
+                encode_with_trailer(buf, 0x0A, |b| bytes::write_i32(b, *id), trailer)
             }
-            ServerBoundPacket::RequestStart { trailer } => encode_with_trailer(0x0B, |_| {}, trailer),
-            ServerBoundPacket::Ready { trailer } => encode_with_trailer(0x0C, |_| {}, trailer),
-            ServerBoundPacket::CancelReady { trailer } => encode_with_trailer(0x0D, |_| {}, trailer),
+            ServerBoundPacket::RequestStart { trailer } => encode_with_trailer(buf, 0x0B, |_| {}, trailer),
+            ServerBoundPacket::Ready { trailer } => encode_with_trailer(buf, 0x0C, |_| {}, trailer),
+            ServerBoundPacket::CancelReady { trailer } => encode_with_trailer(buf, 0x0D, |_| {}, trailer),
             ServerBoundPacket::Played { record_id, trailer } => {
-                encode_with_trailer(0x0E, |b| bytes::write_i32(b, *record_id), trailer)
+                encode_with_trailer(buf, 0x0E, |b| bytes::write_i32(b, *record_id), trailer)
             }
-            ServerBoundPacket::Abort { trailer } => encode_with_trailer(0x0F, |_| {}, trailer),
-        };
-        buf.extend_from_slice(&encoded);
+            ServerBoundPacket::Abort { trailer } => encode_with_trailer(buf, 0x0F, |_| {}, trailer),
+        }
     }
 }
 

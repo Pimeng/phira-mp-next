@@ -140,11 +140,8 @@ impl TestClient {
     async fn recv(&mut self) -> ClientBoundPacket {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         loop {
-            match take_one_frame(&mut self.rbuf) {
-                Some(payload) => {
-                    return ClientBoundPacket::decode_frame(&payload).expect("decode clientbound");
-                }
-                None => {}
+            if let Some(payload) = take_one_frame(&mut self.rbuf) {
+                return ClientBoundPacket::decode_frame(&payload).expect("decode clientbound");
             }
             if tokio::time::Instant::now() > deadline {
                 panic!("recv timeout; buffered={} bytes={:02x?}, inbox ids={:?}",
@@ -266,12 +263,11 @@ async fn start_server(phira_addr: &str, proxy_protocol: bool) -> (Arc<phira_mp::
     });
     let mut addr = String::new();
     for _ in 0..300 {
-        if let Some(a) = phira_mp::server::test_listen_addr() {
-            if Some(&a) != old_addr.as_ref() {
+        if let Some(a) = phira_mp::server::test_listen_addr()
+            && Some(&a) != old_addr.as_ref() {
                 addr = a;
                 break;
             }
-        }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     assert!(!addr.is_empty(), "server did not start");

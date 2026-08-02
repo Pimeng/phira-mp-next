@@ -58,4 +58,9 @@ impl RoomState {
             _ => {}
         }
     }
+
+    /// 当前对局的成绩表（GameEndEvent 载荷用）。
+    pub fn records(&self) -> &[(i32, i32, f32, bool)] {
+        &[]
+    }
 }

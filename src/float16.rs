@@ -18,7 +18,8 @@ fn half_to_float_bits(h: u16) -> u32 {
     let e = ((h >> 10) & 0x1F) as i32; // 半精度指数（必须用 i32，避免下溢）
     let m = h & 0x03FF;
 
-    let out = if e == 0 {
+    
+    if e == 0 {
         if m == 0 {
             // ±0
             sign
@@ -47,8 +48,7 @@ fn half_to_float_bits(h: u16) -> u32 {
     } else {
         let out_e = e + (FP32_EXPONENT_BIAS - FP16_EXPONENT_BIAS);
         sign | ((out_e as u32) << 23) | (m << 13)
-    };
-    out
+    }
 }
 
 /// 单精度 f32 → 半精度 (u16 位模式)，round-to-nearest-even。

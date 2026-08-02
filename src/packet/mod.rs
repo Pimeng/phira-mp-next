@@ -6,7 +6,7 @@ pub mod message;
 pub mod serverbound;
 pub mod state;
 
-use crate::bytes::{CodecError, Encode};
+use crate::bytes::{CodecError, Decode, Encode};
 use ::bytes::{Buf, BytesMut};
 
 /// 所有包的公共行为：可选 Trailer（前向兼容尾部字节）。
@@ -30,6 +30,19 @@ pub(crate) fn put_trailer(out: &mut BytesMut, trailer: &Option<bytes::Bytes>) {
     if let Some(t) = trailer {
         out.extend_from_slice(t);
     }
+}
+
+/// 解码 VarInt 计数列表。
+pub fn read_list<T: Decode>(buf: &mut impl Buf) -> Result<Vec<T>, CodecError> {
+    let count = crate::bytes::read_varint(buf)?;
+    if count < 0 {
+        return Err(CodecError::BadStringLength(count));
+    }
+    let mut out = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        out.push(T::decode(buf)?);
+    }
+    Ok(out)
 }
 
 /// 通用结果包装器（3.5 节）。

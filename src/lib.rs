@@ -1,24 +1,26 @@
 //! phira-mp: Phira 多人联机服务端
 //!
-//! 模块划分对应《服务端架构分析》文档：
-//! - `bytes`    —— 字节级编解码（2.5 节）
-//! - `frame`    —— 帧协议（2.3 节）
-//! - `float16`  —— IEEE-754 半精度（2.5 节）
-//! - `packet`   —— 协议包定义（第 3 章）
-//! - `network`  —— 网络装配与 Handler 链（2、5.4、7.5 节）
-//! - `phira`    —— Phira API 客户端（第 4 章）
-//! - `player`   —— 玩家与全局注册表（5.2、7.4 节）
-//! - `room`     —— 房间与状态机（第 6、7 章）
-//! - `session`  —— 会话挂起/恢复（5.3 节）
-//! - `i18n`     —— 国际化（第 9 章）
-//! - `eventbus` —— 事件总线（第 8 章简化版）
-//! - `command`  —— 控制台命令
-//! - `server`   —— 服务端装配与生命周期（第 1 章）
-//! - `record`   —— 对局录制（第 10 章）
+//! 模块划分对应 Java 原项目职责：
+//! - `bytes`    —— 字节级编解码
+//! - `frame`    —— 帧协议（VarInt 长度前缀）
+//! - `float16`  —— IEEE-754 半精度
+//! - `packet`   —— 协议包定义（零拷贝预编码广播帧）
+//! - `network`  —— 网络装配与 PacketHandler 链（Authenticate→Play→Room）
+//! - `phira`    —— Phira API 客户端
+//! - `player`   —— Player trait（无连接）/ LocalPlayer / PlayerRegistry / 数据源 provider
+//! - `room`     —— Room trait / LocalRoom / 状态机 / 操作层 / RoomRegistry
+//! - `session`  —— 会话挂起/恢复（掉线不掉房）
+//! - `i18n`     —— 国际化（外置语言目录可覆盖）
+//! - `events`   —— 扩展事件定义（对应 Java main.event 包）
+//! - `eventbus` —— 异步事件总线（可取消/可改写事件）
+//! - `command`  —— 控制台命令（事件驱动）
+//! - `server`   —— 装配与生命周期（纯容器 + 扩展点）
+//! - `record`   —— 对局录制
 
 pub mod bytes;
 pub mod command;
 pub mod eventbus;
+pub mod events;
 pub mod float16;
 pub mod frame;
 pub mod i18n;

@@ -44,42 +44,40 @@ impl FrameDecoder {
 
     /// 尝试取出下一个完整帧。无完整帧返回 `Ok(None)`。
     pub fn next_frame(&mut self) -> Result<Option<Bytes>, FrameError> {
-        loop {
-            // 1. 跳过前导 NUL
-            let non_nul = self.buf.iter().position(|&b| b != 0);
-            match non_nul {
-                None => {
-                    // 全是 NUL（或空）→ 清空等待
-                    self.buf.clear();
-                    return Ok(None);
-                }
-                Some(pos) if pos > 0 => {
-                    let _ = self.buf.split_to(pos);
-                }
-                _ => {}
-            }
-
-            // 2. 解 VarInt 长度
-            let (len, consumed) = match decode_varint(&self.buf) {
-                Ok(v) => v,
-                Err(VarIntError::NeedMoreData) => return Ok(None),
-                Err(VarIntError::BadVarInt) => return Err(FrameError::BadVarInt),
-            };
-            if len < 0 {
-                return Err(FrameError::NegativeLength);
-            }
-            let len = len as usize;
-
-            // 3. 等待完整帧
-            if self.buf.len() - consumed < len {
+        // 1. 跳过前导 NUL
+        let non_nul = self.buf.iter().position(|&b| b != 0);
+        match non_nul {
+            None => {
+                // 全是 NUL（或空）→ 清空等待
+                self.buf.clear();
                 return Ok(None);
             }
-
-            // 4. 产出帧
-            let _ = self.buf.split_to(consumed);
-            let frame = self.buf.split_to(len).freeze();
-            return Ok(Some(frame));
+            Some(pos) if pos > 0 => {
+                let _ = self.buf.split_to(pos);
+            }
+            _ => {}
         }
+
+        // 2. 解 VarInt 长度
+        let (len, consumed) = match decode_varint(&self.buf) {
+            Ok(v) => v,
+            Err(VarIntError::NeedMoreData) => return Ok(None),
+            Err(VarIntError::BadVarInt) => return Err(FrameError::BadVarInt),
+        };
+        if len < 0 {
+            return Err(FrameError::NegativeLength);
+        }
+        let len = len as usize;
+
+        // 3. 等待完整帧
+        if self.buf.len() - consumed < len {
+            return Ok(None);
+        }
+
+        // 4. 产出帧
+        let _ = self.buf.split_to(consumed);
+        let frame = self.buf.split_to(len).freeze();
+        Ok(Some(frame))
     }
 }
 

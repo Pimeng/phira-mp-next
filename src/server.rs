@@ -1,14 +1,15 @@
 //! 服务端装配与生命周期（第 1 节）。
 //!
-//! `ServerContext` 是全局上下文（玩家/房间/会话注册表 + Phira 客户端 + i18n）。
-//! 为避免模块间循环引用，提供一个进程级 `OnceLock` 访问点（与 Java 静态注册表语义一致）。
+//! 职责（对应 Java `Server` 静态装配 + `main`）：
+//! - `ServerContext`：纯依赖容器（注册表/事件总线/i18n/HTTP），**不含业务逻辑**。
+//! - 断线清理逻辑在 [`crate::network::connection`]（对应 Java PlayerConnection 的 onClose 回调）。
+//! - 会话挂起/恢复在 [`crate::session::SessionManager`]（对应 Java LocalSessionManager）。
 
 use crate::eventbus::EventBus;
 use crate::i18n::I18nService;
-use crate::network::connection::{ConnectionHandle, DisconnectReason};
 use crate::phira::PhiraFetcher;
-use crate::player::{Player, PlayerRegistry};
-use crate::room::{Room, RoomRegistry};
+use crate::player::PlayerRegistry;
+use crate::room::RoomRegistry;
 use crate::session::SessionManager;
 use clap::Parser;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -49,6 +50,22 @@ pub struct ServerArgs {
     pub record_dir: Option<String>,
 }
 
+/// 服务器扩展点（对应 Java 的静态函数替换 / 初始 handler 接管）。
+pub struct Extensions {
+    /// 初始 handler 工厂：每连接的第一个 PacketHandler（默认 `AuthenticateHandler`）。
+    pub initial_handler: RwLock<crate::network::handler::InitialHandlerFactory>,
+}
+
+impl Default for Extensions {
+    fn default() -> Self {
+        Self {
+            initial_handler: RwLock::new(Arc::new(|| {
+                Box::new(crate::network::authenticate_handler::AuthenticateHandler)
+            })),
+        }
+    }
+}
+
 pub struct ServerContext {
     pub args: ServerArgs,
     pub players: PlayerRegistry,
@@ -57,6 +74,7 @@ pub struct ServerContext {
     pub phira: PhiraFetcher,
     pub i18n: I18nService,
     pub events: EventBus,
+    pub extensions: Extensions,
     pub record_dir: Option<String>,
     /// 实际监听地址（run 中绑定后填入，格式 host:port）。
     pub listen_addr: RwLock<Option<String>>,
@@ -64,14 +82,17 @@ pub struct ServerContext {
     stopped: Notify,
     shutdown: Notify,
     shutdown_requested: AtomicBool,
-    /// 连接 → 房间 索引（current_room_of 用；玩家对象本身不持房间引用）。
-    player_rooms: RwLock<std::collections::HashMap<i32, Arc<Room>>>,
 }
 
 static GLOBAL_CTX: RwLock<Option<Arc<ServerContext>>> = RwLock::new(None);
 
 pub(crate) fn with_server_ctx<R>(f: impl FnOnce(&Arc<ServerContext>) -> R) -> Option<R> {
     GLOBAL_CTX.read().unwrap().as_ref().map(f)
+}
+
+/// 全局上下文访问（发包事件等）。
+pub fn global_ctx() -> Option<Arc<ServerContext>> {
+    with_server_ctx(|ctx| ctx.clone())
 }
 
 /// 测试辅助：读全局 ctx 的监听地址。
@@ -82,11 +103,6 @@ pub fn test_listen_addr() -> Option<String> {
 /// 测试辅助：取全局 ctx。
 pub fn test_global_ctx() -> Option<Arc<ServerContext>> {
     with_server_ctx(|ctx| ctx.clone())
-}
-
-/// 「玩家当前所在房间」索引（Java 版由 handler 位置推断；Rust 版用显式索引）。
-pub(crate) fn current_room_of(user_id: i32) -> Option<Arc<Room>> {
-    with_server_ctx(|ctx| ctx.player_rooms.read().unwrap().get(&user_id).cloned()).flatten()
 }
 
 impl ServerContext {
@@ -102,77 +118,14 @@ impl ServerContext {
             rooms: RoomRegistry::new(),
             sessions,
             events: EventBus::new(),
+            extensions: Extensions::default(),
             listen_addr: RwLock::new(None),
             stopped: Notify::new(),
             shutdown: Notify::new(),
             shutdown_requested: AtomicBool::new(false),
-            player_rooms: RwLock::new(std::collections::HashMap::new()),
         });
         *GLOBAL_CTX.write().unwrap() = Some(ctx.clone());
         ctx
-    }
-
-    /// 玩家进入房间（建立索引）。
-    pub fn enter_room(&self, user_id: i32, room: Arc<Room>) {
-        self.player_rooms.write().unwrap().insert(user_id, room);
-    }
-
-    pub fn leave_room_index(&self, user_id: i32) {
-        self.player_rooms.write().unwrap().remove(&user_id);
-    }
-
-    /// 断线清理（5.3/5.4 节）：由连接读循环结束时调用。
-    ///
-    /// - 若连接已换绑（player.connection().id != conn.id）→ 跳过。
-    /// - 未入房（room=None）→ 直接移除注册。
-    /// - Monitor → 直接离开房间。
-    /// - 普通玩家 → 清理现场后挂起会话。
-    pub async fn on_connection_closed(
-        &self,
-        conn: &ConnectionHandle,
-        player: &Arc<Player>,
-        room: Option<Arc<Room>>,
-        reason: DisconnectReason,
-    ) {
-        // 已换绑/踢旧：跳过
-        if player.connection().id() != conn.id() {
-            return;
-        }
-
-        self.events.post("player.disconnect", &reason);
-
-        let Some(room) = room else {
-            // 未入房：直接移除注册
-            self.players.remove_if_bound(player.id(), conn.id());
-            return;
-        };
-
-        // Monitor 不挂起，直接离开
-        if room.is_monitor_user(player.id()) {
-            let (_left, broadcasts, _destroyed) = room.leave(player.id());
-            for (target, packet) in broadcasts {
-                target.send(packet).await;
-            }
-            self.leave_room_index(player.id());
-            self.players.remove_if_bound(player.id(), conn.id());
-            return;
-        }
-
-        if !room.contains_member(player.id()) {
-            self.leave_room_index(player.id());
-            self.players.remove_if_bound(player.id(), conn.id());
-            return;
-        }
-
-        // 清理对局现场（WaitForReady→cancelReady；Playing→abort）
-        let broadcasts = room.cleanup_for_suspend(player.id());
-        for (target, packet) in broadcasts {
-            target.send(packet).await;
-        }
-
-        // 挂起会话（5 分钟超时，超时后 forceLeave + 移除注册）
-        self.sessions.suspend(player.id(), room, player.clone());
-        info!(user_id = player.id(), "session suspended");
     }
 
     pub fn request_shutdown(&self) {
@@ -190,17 +143,22 @@ impl ServerContext {
     }
 }
 
-/// 启动服务端（1.1 节）。
+/// 启动服务端（1.1 节；对应 Java `Server.main` + 生命周期事件）。
 pub async fn run(args: ServerArgs) -> std::io::Result<()> {
     let ctx = ServerContext::new(args);
 
-    // 控制台命令线程
+    // 控制台命令线程（对应 Java CommandService）
     crate::command::start_command_thread(ctx.clone());
 
     let listener =
         tokio::net::TcpListener::bind(format!("{}:{}", ctx.args.host, ctx.args.port)).await?;
     *ctx.listen_addr.write().unwrap() = Some(listener.local_addr()?.to_string());
     info!(host = %ctx.args.host, port = ctx.args.port, "phira-mp server started");
+    ctx.events
+        .post(crate::events::SERVER_LIFECYCLE, crate::events::ServerLifecycleEvent {
+            phase: crate::events::LifecyclePhase::Started,
+        })
+        .await;
 
     // ctrl-c → 优雅关闭
     {
@@ -220,7 +178,8 @@ pub async fn run(args: ServerArgs) -> std::io::Result<()> {
                         let ctx = ctx.clone();
                         let proxy = ctx.args.proxy_protocol;
                         tokio::spawn(async move {
-                            crate::network::handle_connection(stream, ctx, proxy).await;
+                            let initial = (ctx.extensions.initial_handler.read().unwrap())();
+                            crate::network::connection::spawn_connection(stream, ctx, proxy, initial).await;
                         });
                     }
                     Err(e) => {
@@ -234,21 +193,24 @@ pub async fn run(args: ServerArgs) -> std::io::Result<()> {
         }
     }
 
-    // 关闭流程（1.3 节）：先离房（保持广播/房主转移语义），再踢+断开
+    // 关闭流程（1.3 节）：逐玩家踢出（离房语义由断线清理完成）
+    ctx.events
+        .post(crate::events::SERVER_LIFECYCLE, crate::events::ServerLifecycleEvent {
+            phase: crate::events::LifecyclePhase::Stopping,
+        })
+        .await;
     info!("server stopping: kicking all players");
-    for player in ctx.players.all_players() {
-        if let Some(room) = crate::server::current_room_of(player.id()) {
-            let (_left, broadcasts, _destroyed) = room.leave(player.id());
-            for (target, packet) in broadcasts {
-                target.send(packet).await;
-            }
-            ctx.leave_room_index(player.id());
-        }
+    for player in ctx.players.online_players() {
         player.kick();
         player.connection().close().await;
     }
     drop(listener);
     info!("server stopped");
+    ctx.events
+        .post(crate::events::SERVER_LIFECYCLE, crate::events::ServerLifecycleEvent {
+            phase: crate::events::LifecyclePhase::Stopped,
+        })
+        .await;
     ctx.stopped.notify_waiters();
     Ok(())
 }
