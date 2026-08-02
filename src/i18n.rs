@@ -1,8 +1,10 @@
 //! 国际化（第 9 节；对应 Java `I18nService`）。
 //!
-//! - 语言文件存放于「语言目录」（可执行文件旁 `lang/`），文件名即语言码：
-//!   `lang/zh-CN.ftl`、`lang/en-US.ftl` 等（对应 Java 资源 lang/*.ftl，
-//!   支持外置语言文件替换）。
+//! - 构建期内嵌 zh-CN / en-US 两份 FTL（`include_str!` 自 `lang/`），
+//!   保证无外置文件时文案也可用。
+//! - 启动时额外加载「语言目录」（可执行文件旁 `lang/`）下的 `*.ftl`，
+//!   文件名即语言码（如 `lang/zh-CN.ftl`），同名语言覆盖内嵌值
+//!   （对应 Java 资源 lang/*.ftl，支持外置语言文件替换）。
 //! - 解析顺序：玩家语言 → 服务器默认 → zh-CN 兜底 → key 本身。
 //! - FTL 解析/格式化使用 `fluent` 依赖库（`FluentResource` + `FluentBundle`），
 //!   不自行实现解析/插值。文案支持 FTL 变量引用（如 `{ $name }`），
@@ -18,6 +20,10 @@ use fluent::FluentArgs;
 use fluent::FluentResource;
 use unic_langid::LanguageIdentifier;
 
+// 构建期内嵌语言文件（与 lang/ 目录内容一致；外置文件可覆盖）。
+const ZH_CN: &str = include_str!("../lang/zh-CN.ftl");
+const EN_US: &str = include_str!("../lang/en-US.ftl");
+
 pub struct I18nService {
     default_language: RwLock<String>,
     bundles: RwLock<HashMap<String, FluentBundle<FluentResource>>>,
@@ -29,6 +35,9 @@ impl I18nService {
             default_language: RwLock::new(default_language.into()),
             bundles: RwLock::new(HashMap::new()),
         };
+        // 内嵌默认语言（构建期），外置目录同名语言会覆盖。
+        svc.register_language("zh-CN", ZH_CN);
+        svc.register_language("en-US", EN_US);
         svc.load_external_dir(Path::new("lang"));
         svc
     }
