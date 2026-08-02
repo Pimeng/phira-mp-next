@@ -410,14 +410,11 @@ impl PlayerRegistry {
                     (player, true, None)
                 }
                 Some(existing) => {
-                    let same_conn = conn
-                        .as_ref()
-                        .map(|c| {
-                            existing
-                                .bound_connection()
-                                .map_or(false, |b| b.same_connection(c))
-                        })
-                        .unwrap_or(false);
+                    let same_conn = conn.as_ref().is_some_and(|c| {
+                        existing
+                            .bound_connection()
+                            .is_some_and(|b| b.same_connection(c))
+                    });
                     if same_conn {
                         // 同一连接重复认证（不应发生）
                         (existing.clone(), false, None)
@@ -458,7 +455,7 @@ impl PlayerRegistry {
         if let Some(p) = &existing {
             let online = p.is_online()
                 && p.bound_connection()
-                    .map_or(true, |b| !b.same_connection(conn));
+                    .is_none_or(|b| !b.same_connection(conn));
             if online {
                 return Err("ERROR_PLAYER_ALREADY_ONLINE".to_string());
             }
@@ -512,12 +509,11 @@ impl PlayerRegistry {
     /// （无连接玩家 `bound_connection()` 为 None → 永远不匹配，由其宿主自行移除）。
     pub fn remove_if_bound(&self, user_id: i32, conn: &ConnectionHandle) {
         let mut map = self.players.lock().unwrap();
-        if let Some(p) = map.get(&user_id) {
-            if p.bound_connection()
-                .map_or(false, |b| b.same_connection(conn))
-            {
-                map.remove(&user_id);
-            }
+        if let Some(p) = map.get(&user_id)
+            && p.bound_connection()
+                .is_some_and(|b| b.same_connection(conn))
+        {
+            map.remove(&user_id);
         }
     }
 

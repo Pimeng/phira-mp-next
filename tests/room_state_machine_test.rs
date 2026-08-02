@@ -52,10 +52,9 @@ fn state_changes(plan: &Broadcast) -> Vec<GameState> {
     for (_, frame) in plan {
         if let Some(ClientBoundPacket::ChangeState { game_state, .. }) =
             common::decode_frame_payload(frame)
+            && !out.contains(&game_state)
         {
-            if !out.contains(&game_state) {
-                out.push(game_state);
-            }
+            out.push(game_state);
         }
     }
     out

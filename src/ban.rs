@@ -98,7 +98,7 @@ impl BanManager {
             .get_mut(room_id)
             .map(|e| e.remove(&user_id).is_some())
             .unwrap_or(false);
-        if map.get(room_id).map_or(false, |e| e.is_empty()) {
+        if map.get(room_id).is_some_and(|e| e.is_empty()) {
             map.remove(room_id);
         }
         removed
@@ -109,7 +109,7 @@ impl BanManager {
             .read()
             .unwrap()
             .get(room_id)
-            .map_or(false, |e| e.contains_key(&user_id))
+            .is_some_and(|e| e.contains_key(&user_id))
     }
 
     /// 指定房间的封禁用户列表。

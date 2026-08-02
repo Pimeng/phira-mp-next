@@ -413,6 +413,8 @@ pub(crate) fn judge_send(inner: &Mutex<Inner>, user_id: i32, judges: Vec<JudgeEv
 }
 
 /// 挂起前清理现场：WaitForReady → cancelReady；Playing → abort。
+// clippy 建议的 match guard 形式会在 guard 中可变借用 pattern 绑定（E0596），故保持原样。
+#[allow(clippy::collapsible_match)]
 pub(crate) fn cleanup_for_suspend(inner: &Mutex<Inner>, user_id: i32) -> Broadcast {
     let mut g = inner.lock().unwrap();
     let mut plan = Broadcast::new();

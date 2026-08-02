@@ -554,7 +554,7 @@ fn packet_result_roundtrip() {
     ));
 
     // 失败消息（含超长消息）
-    for msg in vec!["".to_string(), "error".to_string(), "x".repeat(131072)] {
+    for msg in ["".to_string(), "error".to_string(), "x".repeat(131072)] {
         buf.clear();
         encode_void_result(&PacketResult::Failed(msg.clone()), &mut buf);
         let mut r: &[u8] = &buf;

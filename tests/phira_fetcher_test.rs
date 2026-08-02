@@ -88,11 +88,11 @@ fn respond(path: &str, token: Option<&str>, script: &Script) -> (&'static str, S
     }
     {
         let mut m = script.fail_then_ok.lock().unwrap();
-        if let Some(n) = m.get_mut(path) {
-            if *n > 0 {
-                *n -= 1;
-                return ("500 Internal Server Error", "{}".to_string());
-            }
+        if let Some(n) = m.get_mut(path)
+            && *n > 0
+        {
+            *n -= 1;
+            return ("500 Internal Server Error", "{}".to_string());
         }
     }
     let seg = path.trim_start_matches('/');
@@ -256,8 +256,10 @@ async fn bad_json_is_http_error() {
 
 #[tokio::test]
 async fn retry_after_transient_failure() {
-    let mut script = Script::default();
-    script.fail_then_ok = Mutex::new(HashMap::from([("/me".to_string(), 1)]));
+    let script = Script {
+        fail_then_ok: Mutex::new(HashMap::from([("/me".to_string(), 1)])),
+        ..Default::default()
+    };
     let script = Arc::new(script);
     let api = start_mock(script).await;
     let f = fetcher_for(&api).await;

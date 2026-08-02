@@ -133,7 +133,7 @@ fn cmd_rooms(ctx: &Arc<ServerContext>) {
             "LOG_CMD_ROOMS_ITEM",
             &[
                 ("id", &snap.room_id),
-                ("state", &snap.state_kind().to_string()),
+                ("state", snap.state_kind()),
                 ("players", &snap.players.len().to_string()),
                 ("monitors", &snap.monitors.len().to_string()),
                 ("locked", &snap.locked.to_string()),
@@ -257,17 +257,17 @@ fn cmd_banroom(ctx: &Arc<ServerContext>, args: &[&str]) {
     };
     ctx.bans.ban_room(room_id, user_id);
     // 玩家若在该房间 → 移出
-    if let Some(room) = ctx.rooms.find_room(room_id) {
-        if room.contains_member(user_id) {
-            let (_l, plan, _d) = room.leave(user_id);
-            futures::executor::block_on(crate::room::send_broadcasts(plan));
-            log_info!(
-                i18n,
-                "LOG_CMD_REMOVED_FROM_ROOM",
-                ("id", user_id),
-                ("room", room_id)
-            );
-        }
+    if let Some(room) = ctx.rooms.find_room(room_id)
+        && room.contains_member(user_id)
+    {
+        let (_l, plan, _d) = room.leave(user_id);
+        futures::executor::block_on(crate::room::send_broadcasts(plan));
+        log_info!(
+            i18n,
+            "LOG_CMD_REMOVED_FROM_ROOM",
+            ("id", user_id),
+            ("room", room_id)
+        );
     }
     log_info!(
         i18n,
@@ -523,7 +523,7 @@ fn cmd_roominfo(ctx: &Arc<ServerContext>, args: &[&str]) {
     out.push_str(&line(
         i18n,
         "LOG_CMD_ROOMINFO_STATE",
-        &[("state", &snap.state_kind().to_string())],
+        &[("state", snap.state_kind())],
     ));
     out.push_str(&line(
         i18n,

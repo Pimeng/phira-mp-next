@@ -389,7 +389,7 @@ async fn on_connection_closed(
     // 已换绑/顶号：本连接不再代表该玩家 → 跳过
     let same_conn = player
         .bound_connection()
-        .map_or(true, |b| b.same_connection(conn));
+        .is_none_or(|b| b.same_connection(conn));
     if !same_conn {
         return;
     }

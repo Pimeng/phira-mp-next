@@ -11,7 +11,7 @@
 //! - `log_info_global!("KEY", ...)` / `log_info_global!("en-US", "KEY", ...)` ——
 //!   无本地 ctx 时经全局 `ServerContext` 取 i18n（不存在则输出 key 本身）；
 //! - `log_raw(level, text)` —— 输出已渲染的多行文本（命令等结构化输出）。
-//! 参数对 `("name", value)` 对应 FTL 变量 `{ $name }`。
+//!   参数对 `("name", value)` 对应 FTL 变量 `{ $name }`。
 #![allow(unused_macros)] // 宏是 crate 内日志 API（log_error!/log_warn!/log_debug!/log_trace!），允许当前无调用点
 
 use crate::i18n::I18nService;
@@ -190,7 +190,7 @@ mod tests {
     fn log_info_renders_with_server_default_language() {
         let s = svc();
         let msg = render_message(Some(&s), None, "LOG_BOOTING", &[]);
-        assert_eq!(msg, "正在启动 Phira 服务器...");
+        assert_eq!(msg, "正在启动服务器...");
     }
 
     /// 指定语言未注册 → 回退服务器默认语言（zh-CN）。
@@ -198,7 +198,7 @@ mod tests {
     fn log_info_falls_back_on_missing_language() {
         let s = svc();
         let msg = render_message(Some(&s), Some("fr-FR"), "LOG_BOOTING", &[]);
-        assert_eq!(msg, "正在启动 Phira 服务器...");
+        assert_eq!(msg, "正在启动服务器...");
     }
 
     /// 参数插值：占位符被替换。
@@ -211,7 +211,7 @@ mod tests {
             "LOG_LISTENING",
             &[("host", "0.0.0.0"), ("port", "12346")],
         );
-        assert_eq!(msg, "正在偷听 0.0.0.0:12346");
+        assert_eq!(msg, "偷听 0.0.0.0:12346 成功");
     }
 
     /// 无 i18n 服务时输出 key 本身（便于无服务环境调试）。
