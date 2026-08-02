@@ -201,6 +201,8 @@ mod tests {
             port: 0,
             host: "127.0.0.1".into(),
             proxy_protocol: false,
+            http_port: 0,
+            http_host: "127.0.0.1".into(),
             language: "zh-CN".into(),
             session_timeout: 300,
             phira_api: "http://127.0.0.1:1/".into(),

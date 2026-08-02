@@ -14,6 +14,7 @@
 //! - `events`   —— 扩展事件定义（对应 Java main.event 包）
 //! - `eventbus` —— 异步事件总线（可取消/可改写事件）
 //! - `command`  —— 控制台命令（事件驱动）
+//! - `http`     —— HTTP 查询 API（/api/rooms 等）
 //! - `server`   —— 装配与生命周期（纯容器 + 扩展点）
 //! - `record`   —— 对局录制
 
@@ -23,6 +24,7 @@ pub mod eventbus;
 pub mod events;
 pub mod float16;
 pub mod frame;
+pub mod http;
 pub mod i18n;
 pub mod network;
 pub mod packet;

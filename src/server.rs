@@ -30,6 +30,14 @@ pub struct ServerArgs {
     #[arg(long, default_value = "0.0.0.0")]
     pub host: String,
 
+    /// HTTP API 监听端口（0 = 禁用 HTTP 服务）
+    #[arg(long, default_value_t = 12347, value_parser = clap::value_parser!(u16).range(0..))]
+    pub http_port: u16,
+
+    /// HTTP API 绑定地址
+    #[arg(long, default_value = "0.0.0.0")]
+    pub http_host: String,
+
     /// 启用 HAProxy PROXY 协议
     #[arg(long, default_value_t = false)]
     pub proxy_protocol: bool,
@@ -117,6 +125,8 @@ pub struct ServerContext {
     pub record_dir: Option<String>,
     /// 实际监听地址（run 中绑定后填入，格式 host:port）。
     pub listen_addr: RwLock<Option<String>>,
+    /// 实际 HTTP 监听地址（http_port > 0 时填入，格式 host:port）。
+    pub http_addr: RwLock<Option<String>>,
     /// 活跃连接数（对应 Java `allChannels`，关闭日志用）。
     pub active_connections: AtomicUsize,
     /// server 完全停止后通知（测试用）。
@@ -161,6 +171,7 @@ impl ServerContext {
             events: EventBus::new(),
             extensions: Extensions::default(),
             listen_addr: RwLock::new(None),
+            http_addr: RwLock::new(None),
             active_connections: AtomicUsize::new(0),
             stopped: Notify::new(),
             shutdown: Notify::new(),
@@ -206,6 +217,11 @@ pub async fn run(args: ServerArgs) -> std::io::Result<()> {
         tokio::net::TcpListener::bind(format!("{}:{}", ctx.args.host, ctx.args.port)).await?;
     *ctx.listen_addr.write().unwrap() = Some(listener.local_addr()?.to_string());
     info!("Listening on {}:{}", ctx.args.host, ctx.args.port);
+    // HTTP 查询 API（GET /api/rooms）
+    if ctx.args.http_port > 0 {
+        info!("Initializing HTTP API...");
+        crate::http::start(ctx.clone(), ctx.args.http_host.clone(), ctx.args.http_port).await?;
+    }
     ctx.events
         .post(crate::events::SERVER_LIFECYCLE, crate::events::ServerLifecycleEvent {
             phase: crate::events::LifecyclePhase::Started,

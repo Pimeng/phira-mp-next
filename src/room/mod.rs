@@ -97,6 +97,11 @@ pub struct RoomSnapshot {
     pub locked: bool,
     pub players: Vec<i32>,
     pub monitors: Vec<i32>,
+    /// 房主（setting.host 关闭时为 None）。
+    pub host: Option<i32>,
+    /// 当前选曲（SelectChart/WaitForReady/Playing 均有）。
+    pub chart_id: Option<i32>,
+    pub chart_name: Option<String>,
 }
 
 impl RoomSnapshot {

@@ -137,6 +137,17 @@ impl Room for LocalRoom {
             locked: g.setting.locked,
             players: g.players.iter().map(|p| p.id()).collect(),
             monitors: g.monitors.iter().map(|p| p.id()).collect(),
+            host: g.host.as_ref().map(|h| h.id()),
+            chart_id: match &g.state {
+                RoomState::SelectChart { chart_id, .. }
+                | RoomState::WaitForReady { chart_id, .. }
+                | RoomState::Playing { chart_id, .. } => *chart_id,
+            },
+            chart_name: match &g.state {
+                RoomState::SelectChart { chart_name, .. }
+                | RoomState::WaitForReady { chart_name, .. }
+                | RoomState::Playing { chart_name, .. } => chart_name.clone(),
+            },
         }
     }
 
