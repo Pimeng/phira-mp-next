@@ -26,18 +26,18 @@ SYSTEM_LIVE_RECORDER_NAME = 录制状态设置器(请忽略该账号)
 
 # 日志消息（多语言日志系统；LOG_* 键，渲染回退链：指定语言 → 服务器默认 → zh-CN → key）
 LOG_LANGUAGE = 服务器语言: { $lang }
-LOG_BOOTING = 正在启动 Phira 服务器...
-LOG_INIT_NETWORK = 正在初始化网络...
-LOG_LISTENING = 正在偷听 { $host }:{ $port }
-LOG_INIT_HTTP = 正在初始化 HTTP API...
-LOG_DONE = 启动完成 ({ $secs }s)!
-LOG_SERVER_RUNNING = 服务器已运行，输入 'stop' 停止。
-LOG_SHUTTING_DOWN = 正在关闭...
-LOG_KICKING_PLAYERS = 正在踢出 { $count } 名玩家...
-LOG_CLOSING_CHANNELS = 正在关闭 { $count } 个连接...
+LOG_BOOTING = 正在启动服务器...
+LOG_INIT_NETWORK = 正在准备偷听...
+LOG_LISTENING = 偷听 { $host }:{ $port } 成功
+LOG_INIT_HTTP = 正在准备启动 HTTP API 服务...
+LOG_DONE = 服务器启动好了！耗时 { $secs }s
+LOG_SERVER_RUNNING = Tip: 执行 'stop' 或 Ctrl+C 关掉服务器。
+LOG_SHUTTING_DOWN = 正在关闭服务器...
+LOG_KICKING_PLAYERS = 正在让 { $count } 名玩家飞起来...
+LOG_CLOSING_CHANNELS = 正在让 { $count } 个连接滚出去...
 LOG_CHANNELS_CLOSED = 连接已关闭。
 LOG_UPTIME = 已运行 { $min } 分 { $sec } 秒
-LOG_SHUTDOWN_COMPLETED = 关闭完成，耗时 { $ms }ms。再见！
+LOG_SHUTDOWN_COMPLETED = 关闭完成，耗时 { $ms }ms。
 
 # ---- 控制台命令（command.rs）----
 LOG_CMD_ONLINE_TITLE = 在线玩家 ({ $count }):
@@ -116,7 +116,7 @@ LOG_CMD_NONE = none
 LOG_CMD_UNKNOWN = 未知命令: { $cmd }
 
 # ---- HTTP（http.rs）----
-LOG_HTTP_LISTENING = HTTP API 正在偷听 { $addr } (GET /api/rooms)
+LOG_HTTP_LISTENING = HTTP API 正在偷听 { $addr }
 LOG_HTTP_ERROR = HTTP 服务器错误: { $err }
 
 # ---- 网络连接（network/connection.rs）----
@@ -133,8 +133,7 @@ LOG_CONN_DECODE_ERROR = 数据包解码错误: { $err }
 LOG_CONN_SESSION_SUSPENDED = 会话已挂起 (用户 { $id })
 
 # ---- 认证（network/authenticate_handler.rs）----
-LOG_AUTH_TOKEN = { $peer } 发送了他的 token [{ $token }]
-LOG_AUTH_LOGGED_IN = { $peer } 已登录为 [{ $id }] { $name }
+LOG_AUTH_LOGGED_IN = { $peer } [{ $id }] { $name } 加入了服务器
 
 # ---- 对局阶段（network/play_handler.rs）----
 LOG_PLAY_CREATOR_JOIN_FAILED = 创建者加入房间失败 (房间 { $room }): { $err }
@@ -156,7 +155,7 @@ LOG_PHIRA_FETCH_TRANSPORT = Phira 获取传输错误: { $path } ({ $err })
 LOG_PHIRA_FETCH_RETRY = Phira 获取重试: { $path } (第 { $attempt } 次)
 
 # ---- 会话（session.rs）----
-LOG_SESSION_TIMEOUT = 会话超时，强制离开 (用户 { $id })
+LOG_SESSION_TIMEOUT = 会话超时，正在让 { $id } 滚出去
 
 # ---- 服务器（server.rs）----
 LOG_SERVER_ACCEPT_ERROR = 接受连接错误: { $err }

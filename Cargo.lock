@@ -1132,7 +1132,7 @@ dependencies = [
 
 [[package]]
 name = "rphira-mp"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "axum",
  "bytes",
@@ -1428,7 +1428,7 @@ dependencies = [
 
 [[package]]
 name = "terminal-console"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "crossterm",
  "tracing-subscriber",

@@ -1,9 +1,8 @@
 [package]
 name = "terminal-console"
-version = "0.1.0"
+version = "0.0.2"
 edition = "2021"
 description = "Interactive terminal console: readline with log printing above the input line (TerminalConsoleAppender equivalent), with Windows ANSI/Win32 auto-adaptation via crossterm."
-license = "GPL-3.0-only"
 
 [dependencies]
 crossterm = "0.28"
