@@ -79,7 +79,9 @@ pub(crate) fn run_interactive(console: &'static Console, mut handler: impl Conso
         if key_event.kind == KeyEventKind::Release {
             continue;
         }
-        let KeyEvent { code, modifiers, .. } = key_event;
+        let KeyEvent {
+            code, modifiers, ..
+        } = key_event;
         match map_key(code, modifiers) {
             KeyAction::Shutdown => {
                 console.set_input_line(String::new());
@@ -118,23 +120,21 @@ pub(crate) fn run_interactive(console: &'static Console, mut handler: impl Conso
                     sync_line(console, &buffer);
                 }
             }
-            KeyAction::HistoryNext => {
-                match history_idx {
-                    Some(0) | None => {
-                        history_idx = None;
-                        buffer.clear();
+            KeyAction::HistoryNext => match history_idx {
+                Some(0) | None => {
+                    history_idx = None;
+                    buffer.clear();
+                    sync_line(console, &buffer);
+                }
+                Some(i) => {
+                    let prev = i - 1;
+                    if let Some(entry) = console.history_at(prev) {
+                        history_idx = Some(prev);
+                        buffer = entry;
                         sync_line(console, &buffer);
                     }
-                    Some(i) => {
-                        let prev = i - 1;
-                        if let Some(entry) = console.history_at(prev) {
-                            history_idx = Some(prev);
-                            buffer = entry;
-                            sync_line(console, &buffer);
-                        }
-                    }
                 }
-            }
+            },
             KeyAction::Ignore => {}
         }
     }

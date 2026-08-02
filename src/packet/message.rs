@@ -6,22 +6,58 @@ use ::bytes::{Buf, BytesMut};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Message {
-    Chat { user: i32, content: String },
-    CreateRoom { user: i32 },
-    JoinRoom { user: i32, name: String },
-    LeaveRoom { user: i32, name: String },
-    NewHost { user: i32 },
-    SelectChart { user: i32, name: String, id: i32 },
-    GameStart { user: i32 },
-    Ready { user: i32 },
-    CancelReady { user: i32 },
-    CancelGame { user: i32 },
+    Chat {
+        user: i32,
+        content: String,
+    },
+    CreateRoom {
+        user: i32,
+    },
+    JoinRoom {
+        user: i32,
+        name: String,
+    },
+    LeaveRoom {
+        user: i32,
+        name: String,
+    },
+    NewHost {
+        user: i32,
+    },
+    SelectChart {
+        user: i32,
+        name: String,
+        id: i32,
+    },
+    GameStart {
+        user: i32,
+    },
+    Ready {
+        user: i32,
+    },
+    CancelReady {
+        user: i32,
+    },
+    CancelGame {
+        user: i32,
+    },
     StartPlaying,
-    Played { user: i32, score: i32, accuracy: f32, full_combo: bool },
+    Played {
+        user: i32,
+        score: i32,
+        accuracy: f32,
+        full_combo: bool,
+    },
     GameEnd,
-    Abort { user: i32 },
-    LockRoom { lock: bool },
-    CycleRoom { cycle: bool },
+    Abort {
+        user: i32,
+    },
+    LockRoom {
+        lock: bool,
+    },
+    CycleRoom {
+        cycle: bool,
+    },
 }
 
 impl Message {
@@ -71,7 +107,12 @@ impl Encode for Message {
             Message::CancelReady { user } => bytes::write_i32(buf, *user),
             Message::CancelGame { user } => bytes::write_i32(buf, *user),
             Message::StartPlaying | Message::GameEnd => {}
-            Message::Played { user, score, accuracy, full_combo } => {
+            Message::Played {
+                user,
+                score,
+                accuracy,
+                full_combo,
+            } => {
                 bytes::write_i32(buf, *user);
                 bytes::write_i32(buf, *score);
                 bytes::write_f32(buf, *accuracy);
@@ -92,7 +133,9 @@ impl Decode for Message {
                 user: bytes::read_i32(buf)?,
                 content: bytes::read_string(buf, 131072)?,
             },
-            0x01 => Message::CreateRoom { user: bytes::read_i32(buf)? },
+            0x01 => Message::CreateRoom {
+                user: bytes::read_i32(buf)?,
+            },
             0x02 => Message::JoinRoom {
                 user: bytes::read_i32(buf)?,
                 name: bytes::read_string(buf, 131072)?,
@@ -101,16 +144,26 @@ impl Decode for Message {
                 user: bytes::read_i32(buf)?,
                 name: bytes::read_string(buf, 131072)?,
             },
-            0x04 => Message::NewHost { user: bytes::read_i32(buf)? },
+            0x04 => Message::NewHost {
+                user: bytes::read_i32(buf)?,
+            },
             0x05 => Message::SelectChart {
                 user: bytes::read_i32(buf)?,
                 name: bytes::read_string(buf, 131072)?,
                 id: bytes::read_i32(buf)?,
             },
-            0x06 => Message::GameStart { user: bytes::read_i32(buf)? },
-            0x07 => Message::Ready { user: bytes::read_i32(buf)? },
-            0x08 => Message::CancelReady { user: bytes::read_i32(buf)? },
-            0x09 => Message::CancelGame { user: bytes::read_i32(buf)? },
+            0x06 => Message::GameStart {
+                user: bytes::read_i32(buf)?,
+            },
+            0x07 => Message::Ready {
+                user: bytes::read_i32(buf)?,
+            },
+            0x08 => Message::CancelReady {
+                user: bytes::read_i32(buf)?,
+            },
+            0x09 => Message::CancelGame {
+                user: bytes::read_i32(buf)?,
+            },
             0x0A => Message::StartPlaying,
             0x0B => Message::Played {
                 user: bytes::read_i32(buf)?,
@@ -119,9 +172,15 @@ impl Decode for Message {
                 full_combo: bytes::read_bool(buf)?,
             },
             0x0C => Message::GameEnd,
-            0x0D => Message::Abort { user: bytes::read_i32(buf)? },
-            0x0E => Message::LockRoom { lock: bytes::read_bool(buf)? },
-            0x0F => Message::CycleRoom { cycle: bytes::read_bool(buf)? },
+            0x0D => Message::Abort {
+                user: bytes::read_i32(buf)?,
+            },
+            0x0E => Message::LockRoom {
+                lock: bytes::read_bool(buf)?,
+            },
+            0x0F => Message::CycleRoom {
+                cycle: bytes::read_bool(buf)?,
+            },
             _ => return Err(CodecError::UnknownId("message", id)),
         })
     }

@@ -15,9 +15,9 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::RwLock;
 
-use fluent::concurrent::FluentBundle;
 use fluent::FluentArgs;
 use fluent::FluentResource;
+use fluent::concurrent::FluentBundle;
 use unic_langid::LanguageIdentifier;
 
 // 构建期内嵌语言文件（与 lang/ 目录内容一致；外置文件可覆盖）。
@@ -53,7 +53,11 @@ impl I18nService {
             if path.extension().and_then(|e| e.to_str()) != Some("ftl") {
                 continue;
             }
-            let Some(lang) = path.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string()) else {
+            let Some(lang) = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_string())
+            else {
                 continue;
             };
             let Ok(text) = std::fs::read_to_string(&path) else {
@@ -161,7 +165,10 @@ mod tests {
 
     #[test]
     fn specified_language_message() {
-        assert_eq!(svc().message(Some("en-US"), "ERROR_PERMISSION_DENIED"), "Permission denied");
+        assert_eq!(
+            svc().message(Some("en-US"), "ERROR_PERMISSION_DENIED"),
+            "Permission denied"
+        );
     }
 
     #[test]
@@ -177,29 +184,47 @@ mod tests {
     #[test]
     fn missing_language_falls_back_to_default() {
         // fr-FR 不存在 → 回退默认 zh-CN
-        assert_eq!(svc().message(Some("fr-FR"), "ERROR_PERMISSION_DENIED"), "你没有权限");
+        assert_eq!(
+            svc().message(Some("fr-FR"), "ERROR_PERMISSION_DENIED"),
+            "你没有权限"
+        );
     }
 
     #[test]
     fn change_default_language() {
         let s = svc();
         s.set_default_language("en-US");
-        assert_eq!(s.message(None, "ERROR_PERMISSION_DENIED"), "Permission denied");
+        assert_eq!(
+            s.message(None, "ERROR_PERMISSION_DENIED"),
+            "Permission denied"
+        );
     }
 
     #[test]
     fn different_keys_translations() {
         let s = svc();
         assert_eq!(s.message(Some("en-US"), "ERROR_ROOM_FULL"), "Room is full");
-        assert_eq!(s.message(Some("en-US"), "ERROR_ROOM_NOT_FOUND"), "Room not found");
-        assert_eq!(s.message(Some("en-US"), "ERROR_NOT_IN_ROOM"), "You are not in a room");
+        assert_eq!(
+            s.message(Some("en-US"), "ERROR_ROOM_NOT_FOUND"),
+            "Room not found"
+        );
+        assert_eq!(
+            s.message(Some("en-US"), "ERROR_NOT_IN_ROOM"),
+            "You are not in a room"
+        );
     }
 
     #[test]
     fn system_key_both_languages() {
         let s = svc();
-        assert_eq!(s.message(Some("en-US"), "SYSTEM_LIVE_RECORDER_NAME"), "Live Recorder (Please ignore this account)");
-        assert_eq!(s.message(Some("zh-CN"), "SYSTEM_LIVE_RECORDER_NAME"), "录制状态设置器(请忽略该账号)");
+        assert_eq!(
+            s.message(Some("en-US"), "SYSTEM_LIVE_RECORDER_NAME"),
+            "Live Recorder (Please ignore this account)"
+        );
+        assert_eq!(
+            s.message(Some("zh-CN"), "SYSTEM_LIVE_RECORDER_NAME"),
+            "录制状态设置器(请忽略该账号)"
+        );
     }
 
     #[test]
@@ -213,7 +238,10 @@ CUSTOM_KEY = 自定义
 "#,
         );
         // 覆盖内嵌值 + 新增 key
-        assert_eq!(s.message(Some("zh-CN"), "ERROR_PERMISSION_DENIED"), "自定义拒绝");
+        assert_eq!(
+            s.message(Some("zh-CN"), "ERROR_PERMISSION_DENIED"),
+            "自定义拒绝"
+        );
         assert_eq!(s.message(Some("zh-CN"), "CUSTOM_KEY"), "自定义");
     }
 
@@ -226,7 +254,10 @@ CUSTOM_KEY = 自定义
 ERROR_PERMISSION_DENIED = 日本語拒否
 "#,
         );
-        assert_eq!(s.message(Some("ja-JP"), "ERROR_PERMISSION_DENIED"), "日本語拒否");
+        assert_eq!(
+            s.message(Some("ja-JP"), "ERROR_PERMISSION_DENIED"),
+            "日本語拒否"
+        );
         // 该语言缺 key → 回退默认 zh-CN
         assert_eq!(s.message(Some("ja-JP"), "ERROR_ROOM_FULL"), "房间已满");
     }
@@ -236,13 +267,12 @@ ERROR_PERMISSION_DENIED = 日本語拒否
         let s = svc();
         let dir = std::env::temp_dir().join(format!("i18n_test_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join("fr-FR.ftl"),
-            "ERROR_PERMISSION_DENIED = Refusé\n",
-        )
-        .unwrap();
+        std::fs::write(dir.join("fr-FR.ftl"), "ERROR_PERMISSION_DENIED = Refusé\n").unwrap();
         s.load_external_dir(&dir);
-        assert_eq!(s.message(Some("fr-FR"), "ERROR_PERMISSION_DENIED"), "Refusé");
+        assert_eq!(
+            s.message(Some("fr-FR"), "ERROR_PERMISSION_DENIED"),
+            "Refusé"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

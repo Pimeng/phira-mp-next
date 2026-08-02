@@ -7,7 +7,7 @@
 use super::local::Inner;
 use super::state::RoomState;
 use super::{CommitGameOutcome, GameError, GameResult, RecordingData};
-use crate::packet::clientbound::{encode_shared, ClientBoundPacket, SharedFrame};
+use crate::packet::clientbound::{ClientBoundPacket, SharedFrame, encode_shared};
 use crate::packet::data::{JudgeEvent, TouchFrame};
 use crate::packet::message::Message;
 use crate::packet::state::GameState;
@@ -42,14 +42,20 @@ pub(crate) fn toggle_lock(inner: &Mutex<Inner>) -> GameResult<Broadcast> {
     let mut g = inner.lock().unwrap();
     g.setting.locked = !g.setting.locked;
     let locked = g.setting.locked;
-    Ok(broadcast_all(&g, ClientBoundPacket::message(Message::LockRoom { lock: locked })))
+    Ok(broadcast_all(
+        &g,
+        ClientBoundPacket::message(Message::LockRoom { lock: locked }),
+    ))
 }
 
 pub(crate) fn toggle_cycle(inner: &Mutex<Inner>) -> GameResult<Broadcast> {
     let mut g = inner.lock().unwrap();
     g.setting.cycle = !g.setting.cycle;
     let cycle = g.setting.cycle;
-    Ok(broadcast_all(&g, ClientBoundPacket::message(Message::CycleRoom { cycle })))
+    Ok(broadcast_all(
+        &g,
+        ClientBoundPacket::message(Message::CycleRoom { cycle }),
+    ))
 }
 
 /// chat：返回广播计划。
@@ -60,7 +66,10 @@ pub(crate) fn chat(inner: &Mutex<Inner>, user_id: i32, content: String) -> GameR
     }
     Ok(broadcast_all(
         &g,
-        ClientBoundPacket::message(Message::Chat { user: user_id, content }),
+        ClientBoundPacket::message(Message::Chat {
+            user: user_id,
+            content,
+        }),
     ))
 }
 
@@ -81,7 +90,11 @@ pub(crate) fn commit_select_chart(
     chart_name: String,
 ) -> GameResult<Broadcast> {
     let mut g = inner.lock().unwrap();
-    let RoomState::SelectChart { chart_id: cid, chart_name: cn } = &mut g.state else {
+    let RoomState::SelectChart {
+        chart_id: cid,
+        chart_name: cn,
+    } = &mut g.state
+    else {
         return Err(GameError("ERROR_INVALID_STATE"));
     };
     *cid = Some(chart_id);
@@ -109,7 +122,10 @@ pub(crate) fn require_start(inner: &Mutex<Inner>, user_id: i32) -> GameResult<Br
     let mut g = inner.lock().unwrap();
     let total = g.players.len() + g.monitors.len();
     let (chart_id, chart_name) = match &g.state {
-        RoomState::SelectChart { chart_id, chart_name } => (*chart_id, chart_name.clone()),
+        RoomState::SelectChart {
+            chart_id,
+            chart_name,
+        } => (*chart_id, chart_name.clone()),
         _ => return Err(GameError("ERROR_INVALID_STATE")),
     };
 
@@ -124,8 +140,14 @@ pub(crate) fn require_start(inner: &Mutex<Inner>, user_id: i32) -> GameResult<Br
             touch_frames: Default::default(),
             judge_events: Default::default(),
         };
-        plan.extend(broadcast_all(&g, ClientBoundPacket::change_state(GameState::Playing)));
-        plan.extend(broadcast_all(&g, ClientBoundPacket::message(Message::StartPlaying)));
+        plan.extend(broadcast_all(
+            &g,
+            ClientBoundPacket::change_state(GameState::Playing),
+        ));
+        plan.extend(broadcast_all(
+            &g,
+            ClientBoundPacket::message(Message::StartPlaying),
+        ));
     } else {
         // 多人：updateGameState(WaitForReady) → enterState(WaitForReady) + gameRequireStart(=GameStart)。
         g.state = RoomState::WaitForReady {
@@ -137,7 +159,10 @@ pub(crate) fn require_start(inner: &Mutex<Inner>, user_id: i32) -> GameResult<Br
                 s
             },
         };
-        plan.extend(broadcast_all(&g, ClientBoundPacket::change_state(GameState::WaitForReady)));
+        plan.extend(broadcast_all(
+            &g,
+            ClientBoundPacket::change_state(GameState::WaitForReady),
+        ));
         plan.extend(broadcast_all(
             &g,
             ClientBoundPacket::message(Message::GameStart { user: user_id }),
@@ -158,7 +183,12 @@ pub(crate) fn ready(inner: &Mutex<Inner>, user_id: i32) -> GameResult<(Broadcast
         .collect();
 
     let (all_ready, cid, cn) = {
-        let RoomState::WaitForReady { ready, chart_id, chart_name } = &mut g.state else {
+        let RoomState::WaitForReady {
+            ready,
+            chart_id,
+            chart_name,
+        } = &mut g.state
+        else {
             return Err(GameError("ERROR_INVALID_STATE"));
         };
         ready.insert(user_id);
@@ -166,7 +196,10 @@ pub(crate) fn ready(inner: &Mutex<Inner>, user_id: i32) -> GameResult<(Broadcast
         (all_ready, *chart_id, chart_name.clone())
     };
 
-    let mut plan = broadcast_all(&g, ClientBoundPacket::message(Message::Ready { user: user_id }));
+    let mut plan = broadcast_all(
+        &g,
+        ClientBoundPacket::message(Message::Ready { user: user_id }),
+    );
     if all_ready {
         g.state = RoomState::Playing {
             chart_id: cid,
@@ -175,8 +208,14 @@ pub(crate) fn ready(inner: &Mutex<Inner>, user_id: i32) -> GameResult<(Broadcast
             touch_frames: Default::default(),
             judge_events: Default::default(),
         };
-        plan.extend(broadcast_all(&g, ClientBoundPacket::change_state(GameState::Playing)));
-        plan.extend(broadcast_all(&g, ClientBoundPacket::message(Message::StartPlaying)));
+        plan.extend(broadcast_all(
+            &g,
+            ClientBoundPacket::change_state(GameState::Playing),
+        ));
+        plan.extend(broadcast_all(
+            &g,
+            ClientBoundPacket::message(Message::StartPlaying),
+        ));
         return Ok((plan, true));
     }
     Ok((plan, false))
@@ -217,7 +256,13 @@ pub(crate) fn commit_played(
 
     // 取录制数据（若该玩家有触摸/判定数据）
     let recording = {
-        let RoomState::Playing { touch_frames, judge_events, chart_id, chart_name, .. } = &mut g.state
+        let RoomState::Playing {
+            touch_frames,
+            judge_events,
+            chart_id,
+            chart_name,
+            ..
+        } = &mut g.state
         else {
             unreachable!()
         };
@@ -279,7 +324,13 @@ pub(crate) fn commit_abort(inner: &Mutex<Inner>, user_id: i32) -> GameResult<Com
 
 /// 对局结束判定（6.5 节）：所有在线 players（不含 monitor）完成；全员掉线也算结束。
 fn check_game_end_inner(g: &mut Inner, plan: &mut Broadcast) -> bool {
-    let RoomState::Playing { done, chart_id, chart_name, .. } = &g.state else {
+    let RoomState::Playing {
+        done,
+        chart_id,
+        chart_name,
+        ..
+    } = &g.state
+    else {
         return false;
     };
     let online_players: Vec<i32> = g
@@ -303,7 +354,10 @@ fn check_game_end_inner(g: &mut Inner, plan: &mut Broadcast) -> bool {
         g,
         ClientBoundPacket::change_state(GameState::SelectChart { chart_id: cid }),
     ));
-    plan.extend(broadcast_all(g, ClientBoundPacket::message(Message::GameEnd)));
+    plan.extend(broadcast_all(
+        g,
+        ClientBoundPacket::message(Message::GameEnd),
+    ));
 
     if g.setting.cycle {
         plan.extend(transfer_host_plan(g));
@@ -428,11 +482,19 @@ fn build_host_change_plan(
 ) -> Broadcast {
     let mut plan = Broadcast::new();
     if let Some(old) = old_host {
-        plan.push((old.clone(), encode_shared(&ClientBoundPacket::change_host(false))));
+        plan.push((
+            old.clone(),
+            encode_shared(&ClientBoundPacket::change_host(false)),
+        ));
     }
-    plan.push((new_host.clone(), encode_shared(&ClientBoundPacket::change_host(true))));
+    plan.push((
+        new_host.clone(),
+        encode_shared(&ClientBoundPacket::change_host(true)),
+    ));
     let new_id = new_host.id();
-    let msg = encode_shared(&ClientBoundPacket::message(Message::NewHost { user: new_id }));
+    let msg = encode_shared(&ClientBoundPacket::message(Message::NewHost {
+        user: new_id,
+    }));
     for target in g.players.iter().chain(g.monitors.iter()) {
         if target.id() != new_id {
             plan.push((target.clone(), msg.clone()));

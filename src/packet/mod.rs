@@ -105,7 +105,9 @@ impl<T: DecodeSized> PacketResult<T> {
         if success {
             Ok(PacketResult::Success(T::decode_sized(buf)?))
         } else {
-            Ok(PacketResult::Failed(crate::bytes::read_string(buf, 131072)?))
+            Ok(PacketResult::Failed(crate::bytes::read_string(
+                buf, 131072,
+            )?))
         }
     }
 }

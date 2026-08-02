@@ -2,8 +2,8 @@
 //! 多订阅者顺序、handler panic 隔离、无订阅者安全路径。
 
 use phira_mp::eventbus::EventBus;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const KEY: &str = "test.event";
 const KEY2: &str = "test.event2";
@@ -26,7 +26,14 @@ async fn subscribe_and_post() {
         }
     });
 
-    bus.post(KEY, CounterEvent { value: 1, cancelled: false }).await;
+    bus.post(
+        KEY,
+        CounterEvent {
+            value: 1,
+            cancelled: false,
+        },
+    )
+    .await;
     assert_eq!(got.load(Ordering::SeqCst), 1);
 }
 
@@ -37,12 +44,16 @@ async fn multiple_subscribers_run_in_order() {
     let o1 = order.clone();
     let _s1 = bus.subscribe(KEY, move |_: &i32| {
         let o1 = o1.clone();
-        async move { o1.lock().unwrap().push(1); }
+        async move {
+            o1.lock().unwrap().push(1);
+        }
     });
     let o2 = order.clone();
     let _s2 = bus.subscribe(KEY, move |_: &i32| {
         let o2 = o2.clone();
-        async move { o2.lock().unwrap().push(2); }
+        async move {
+            o2.lock().unwrap().push(2);
+        }
     });
 
     bus.post(KEY, 42).await;
@@ -57,7 +68,9 @@ async fn unsubscribe_on_drop() {
     {
         let _sub = bus.subscribe(KEY, move |_: &i32| {
             let g = g.clone();
-            async move { g.fetch_add(1, Ordering::SeqCst); }
+            async move {
+                g.fetch_add(1, Ordering::SeqCst);
+            }
         });
         bus.post(KEY, 1).await;
         assert_eq!(got.load(Ordering::SeqCst), 1);
@@ -79,7 +92,15 @@ async fn post_mut_mutates_event() {
         async {}
     });
 
-    let out = bus.post_mut(KEY, CounterEvent { value: 1, cancelled: false }).await;
+    let out = bus
+        .post_mut(
+            KEY,
+            CounterEvent {
+                value: 1,
+                cancelled: false,
+            },
+        )
+        .await;
     assert_eq!(out.value, 20, "两个 handler 按序改写");
 }
 
@@ -93,11 +114,23 @@ async fn post_mut_cancellation_pattern() {
         async {}
     });
     let cancelled = bus
-        .post_mut(KEY, CounterEvent { value: 7, cancelled: false })
+        .post_mut(
+            KEY,
+            CounterEvent {
+                value: 7,
+                cancelled: false,
+            },
+        )
         .await;
     assert!(cancelled.cancelled);
     let kept = bus
-        .post_mut(KEY, CounterEvent { value: 8, cancelled: false })
+        .post_mut(
+            KEY,
+            CounterEvent {
+                value: 8,
+                cancelled: false,
+            },
+        )
         .await;
     assert!(!kept.cancelled);
 }
@@ -127,7 +160,9 @@ async fn handler_panic_isolated() {
     let g = got.clone();
     let _good = bus.subscribe(KEY, move |_: &i32| {
         let g = g.clone();
-        async move { g.fetch_add(1, Ordering::SeqCst); }
+        async move {
+            g.fetch_add(1, Ordering::SeqCst);
+        }
     });
 
     // post 不因 handler panic 而失败
@@ -141,7 +176,9 @@ async fn post_mut_panic_isolated_but_value_kept() {
     let bus = EventBus::new();
     let _bad = bus.subscribe_mut(KEY, |e: &mut i32| {
         *e += 1;
-        async { panic!("mut handler bug"); }
+        async {
+            panic!("mut handler bug");
+        }
     });
     // post_mut 内部 catch_unwind：panic 被隔离，事件仍返回（此处 handler 在 panic 前已改写）
     let out = bus.post_mut(KEY, 0i32).await;
@@ -155,13 +192,17 @@ async fn different_keys_are_isolated() {
     let s = got_str.clone();
     let _s1 = bus.subscribe(KEY, move |_: &String| {
         let s = s.clone();
-        async move { s.fetch_add(1, Ordering::SeqCst); }
+        async move {
+            s.fetch_add(1, Ordering::SeqCst);
+        }
     });
     let got_int = Arc::new(AtomicUsize::new(0));
     let i = got_int.clone();
     let _s2 = bus.subscribe(KEY2, move |_: &i32| {
         let i = i.clone();
-        async move { i.fetch_add(1, Ordering::SeqCst); }
+        async move {
+            i.fetch_add(1, Ordering::SeqCst);
+        }
     });
     // 各 key 只发布匹配类型的事件
     bus.post(KEY, "hi".to_string()).await;
@@ -193,12 +234,16 @@ async fn subscription_lifetime_across_keys() {
     let g1 = got.clone();
     let _s1 = bus.subscribe(KEY, move |_: &i32| {
         let g = g1.clone();
-        async move { g.fetch_add(1, Ordering::SeqCst); }
+        async move {
+            g.fetch_add(1, Ordering::SeqCst);
+        }
     });
     let g2 = got.clone();
     let _s2 = bus.subscribe(KEY2, move |_: &i32| {
         let g = g2.clone();
-        async move { g.fetch_add(10, Ordering::SeqCst); }
+        async move {
+            g.fetch_add(10, Ordering::SeqCst);
+        }
     });
     bus.post(KEY, 1).await;
     bus.post(KEY2, 1).await;

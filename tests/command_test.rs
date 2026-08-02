@@ -5,24 +5,33 @@
 
 mod common;
 
-use common::{authenticate, start_mock_phira, start_server, auth_token, SERIAL, TestClient};
+use common::{SERIAL, TestClient, auth_token, authenticate, start_mock_phira, start_server};
 use phira_mp::command::process_command;
+use phira_mp::packet::PacketResult;
 use phira_mp::packet::clientbound::ClientBoundPacket;
 use phira_mp::packet::message::Message;
 use phira_mp::packet::serverbound::ServerBoundPacket;
-use phira_mp::packet::PacketResult;
 
 /// 认证失败返回错误消息。
 async fn auth_failure_message(client: &mut TestClient, n: i32) -> String {
     client
-        .send(&ServerBoundPacket::Authenticate { token: auth_token(n), trailer: None })
+        .send(&ServerBoundPacket::Authenticate {
+            token: auth_token(n),
+            trailer: None,
+        })
         .await;
     let p = client
         .recv_until(|p| matches!(p, ClientBoundPacket::Authenticate { .. }))
         .await;
     match p {
-        ClientBoundPacket::Authenticate { result: PacketResult::Failed(msg), .. } => msg,
-        ClientBoundPacket::Authenticate { result: PacketResult::Success(_), .. } => {
+        ClientBoundPacket::Authenticate {
+            result: PacketResult::Failed(msg),
+            ..
+        } => msg,
+        ClientBoundPacket::Authenticate {
+            result: PacketResult::Success(_),
+            ..
+        } => {
             panic!("auth should have failed")
         }
         _ => unreachable!(),
@@ -41,8 +50,14 @@ async fn create_room(client: &mut TestClient, room_id: &str) {
         .recv_until(|p| matches!(p, ClientBoundPacket::CreateRoom { .. }))
         .await;
     match p {
-        ClientBoundPacket::CreateRoom { result: PacketResult::Success(_), .. } => {}
-        ClientBoundPacket::CreateRoom { result: PacketResult::Failed(msg), .. } => {
+        ClientBoundPacket::CreateRoom {
+            result: PacketResult::Success(_),
+            ..
+        } => {}
+        ClientBoundPacket::CreateRoom {
+            result: PacketResult::Failed(msg),
+            ..
+        } => {
             panic!("create room failed: {msg}")
         }
         _ => unreachable!(),
@@ -100,10 +115,19 @@ async fn banroom_blocks_join_until_unban() {
         .recv_until(|p| matches!(p, ClientBoundPacket::JoinRoom { .. }))
         .await;
     match p {
-        ClientBoundPacket::JoinRoom { result: PacketResult::Failed(msg), .. } => {
-            assert!(msg.contains("禁止"), "expected banned-from-room message, got {msg}");
+        ClientBoundPacket::JoinRoom {
+            result: PacketResult::Failed(msg),
+            ..
+        } => {
+            assert!(
+                msg.contains("禁止"),
+                "expected banned-from-room message, got {msg}"
+            );
         }
-        ClientBoundPacket::JoinRoom { result: PacketResult::Success(_), .. } => {
+        ClientBoundPacket::JoinRoom {
+            result: PacketResult::Success(_),
+            ..
+        } => {
             panic!("join should have failed")
         }
         _ => unreachable!(),
@@ -121,7 +145,13 @@ async fn banroom_blocks_join_until_unban() {
         .recv_until(|p| matches!(p, ClientBoundPacket::JoinRoom { .. }))
         .await;
     assert!(
-        matches!(p, ClientBoundPacket::JoinRoom { result: PacketResult::Success(_), .. }),
+        matches!(
+            p,
+            ClientBoundPacket::JoinRoom {
+                result: PacketResult::Success(_),
+                ..
+            }
+        ),
         "join should succeed after unban"
     );
 }
@@ -142,11 +172,23 @@ async fn broadcast_and_room_management_commands() {
     let p = a
         .recv_until(|p| matches!(p, ClientBoundPacket::Message { message: Message::Chat { user: 0, content }, .. } if content == "hello all"))
         .await;
-    assert!(matches!(p, ClientBoundPacket::Message { message: Message::Chat { user: 0, .. }, .. }));
+    assert!(matches!(
+        p,
+        ClientBoundPacket::Message {
+            message: Message::Chat { user: 0, .. },
+            ..
+        }
+    ));
     let p = b
         .recv_until(|p| matches!(p, ClientBoundPacket::Message { message: Message::Chat { user: 0, content }, .. } if content == "hello all"))
         .await;
-    assert!(matches!(p, ClientBoundPacket::Message { message: Message::Chat { user: 0, .. }, .. }));
+    assert!(matches!(
+        p,
+        ClientBoundPacket::Message {
+            message: Message::Chat { user: 0, .. },
+            ..
+        }
+    ));
 
     // A 建房，B 加入
     create_room(&mut a, "R1").await;
@@ -165,12 +207,28 @@ async fn broadcast_and_room_management_commands() {
     // lock / cycle
     assert!(process_command(&ctx, "lock R1 true"));
     assert!(room.setting().locked);
-    b.recv_until(|p| matches!(p, ClientBoundPacket::Message { message: Message::LockRoom { lock: true }, .. }))
-        .await;
+    b.recv_until(|p| {
+        matches!(
+            p,
+            ClientBoundPacket::Message {
+                message: Message::LockRoom { lock: true },
+                ..
+            }
+        )
+    })
+    .await;
     assert!(process_command(&ctx, "cycle R1 true"));
     assert!(room.setting().cycle);
-    b.recv_until(|p| matches!(p, ClientBoundPacket::Message { message: Message::CycleRoom { cycle: true }, .. }))
-        .await;
+    b.recv_until(|p| {
+        matches!(
+            p,
+            ClientBoundPacket::Message {
+                message: Message::CycleRoom { cycle: true },
+                ..
+            }
+        )
+    })
+    .await;
 
     // maxusers
     assert!(process_command(&ctx, "maxusers R1 3"));
@@ -187,7 +245,13 @@ async fn broadcast_and_room_management_commands() {
     let p = a
         .recv_until(|p| matches!(p, ClientBoundPacket::Message { message: Message::Chat { user: 0, content }, .. } if content == "hi room"))
         .await;
-    assert!(matches!(p, ClientBoundPacket::Message { message: Message::Chat { user: 0, .. }, .. }));
+    assert!(matches!(
+        p,
+        ClientBoundPacket::Message {
+            message: Message::Chat { user: 0, .. },
+            ..
+        }
+    ));
 
     // roominfo / nexthost 不 panic
     assert!(process_command(&ctx, "roominfo R1"));

@@ -19,4 +19,4 @@ pub const PROTOCOL_VERSION: u8 = 0x01;
 pub const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 pub const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
-pub use connection::{spawn_connection, ConnectionHandle};
+pub use connection::{ConnectionHandle, spawn_connection};

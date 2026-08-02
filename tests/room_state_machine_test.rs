@@ -50,7 +50,9 @@ fn packets_for(plan: &Broadcast, user_id: i32) -> Vec<ClientBoundPacket> {
 fn state_changes(plan: &Broadcast) -> Vec<GameState> {
     let mut out: Vec<GameState> = Vec::new();
     for (_, frame) in plan {
-        if let Some(ClientBoundPacket::ChangeState { game_state, .. }) = common::decode_frame_payload(frame) {
+        if let Some(ClientBoundPacket::ChangeState { game_state, .. }) =
+            common::decode_frame_payload(frame)
+        {
             if !out.contains(&game_state) {
                 out.push(game_state);
             }
@@ -73,7 +75,10 @@ fn setup_duo_playing(room: &Arc<LocalRoom>, p1: &Arc<TestPlayer>, p2: &Arc<TestP
     room.join(p2.clone(), false).unwrap();
     room.commit_select_chart(p1.id(), 42, "C42".into()).unwrap();
     room.require_start(p1.id()).unwrap(); // → WaitForReady，p1 自动 ready
-    assert!(matches!(room.game_state_protocol(), GameState::WaitForReady));
+    assert!(matches!(
+        room.game_state_protocol(),
+        GameState::WaitForReady
+    ));
     room.ready(p2.id()).unwrap(); // 全员 ready → Playing
     assert!(matches!(room.game_state_protocol(), GameState::Playing));
 }
@@ -85,7 +90,10 @@ fn assert_err<T>(r: Result<T, phira_mp::room::GameError>, expected: &str) {
     }
 }
 
-fn assert_commit_err(r: Result<phira_mp::room::CommitGameOutcome, phira_mp::room::GameError>, expected: &str) {
+fn assert_commit_err(
+    r: Result<phira_mp::room::CommitGameOutcome, phira_mp::room::GameError>,
+    expected: &str,
+) {
     match r {
         Err(e) => assert_eq!(e.0, expected, "expected {expected}"),
         Ok(_) => panic!("expected error {expected}, got ok"),
@@ -118,7 +126,10 @@ fn join_second_player_broadcasts() {
     let pkts = packets_for(&plan, 1);
     assert!(pkts.iter().any(|p| matches!(p,
         ClientBoundPacket::OnJoinRoom { user_profile, .. } if user_profile.user_id == 2)));
-    assert!(matches!(message_for(&plan, 1), Some(Message::JoinRoom { user: 2, .. })));
+    assert!(matches!(
+        message_for(&plan, 1),
+        Some(Message::JoinRoom { user: 2, .. })
+    ));
 }
 
 #[test]
@@ -151,7 +162,10 @@ fn join_duplicate_returns_already_in() {
 fn join_room_full() {
     let room = LocalRoom::new(
         "F",
-        RoomSetting { max_player: 1, ..Default::default() },
+        RoomSetting {
+            max_player: 1,
+            ..Default::default()
+        },
         || {},
     );
     room.join(player(1, "A"), false).unwrap();
@@ -172,14 +186,28 @@ fn join_locked_room() {
     // monitor 可进
     room.join(player(3, "M"), true).unwrap();
     // 空房间可进（先离开后加锁，再进）
-    let room2 = LocalRoom::new("L", RoomSetting { locked: true, ..Default::default() }, || {});
+    let room2 = LocalRoom::new(
+        "L",
+        RoomSetting {
+            locked: true,
+            ..Default::default()
+        },
+        || {},
+    );
     room2.join(player(10, "X"), false).unwrap();
     assert!(room2.contains_member(10));
 }
 
 #[test]
 fn join_destroyed_room() {
-    let room = LocalRoom::new("D", RoomSetting { auto_destroy: true, ..Default::default() }, || {});
+    let room = LocalRoom::new(
+        "D",
+        RoomSetting {
+            auto_destroy: true,
+            ..Default::default()
+        },
+        || {},
+    );
     room.join(player(1, "A"), false).unwrap();
     room.leave(1);
     assert!(room.is_destroyed());
@@ -216,7 +244,14 @@ fn leave_last_player_destroys_and_fires_callback() {
 
 #[test]
 fn auto_destroy_false_keeps_room_empty() {
-    let room = LocalRoom::new("K", RoomSetting { auto_destroy: false, ..Default::default() }, || {});
+    let room = LocalRoom::new(
+        "K",
+        RoomSetting {
+            auto_destroy: false,
+            ..Default::default()
+        },
+        || {},
+    );
     room.join(player(1, "A"), false).unwrap();
     let (left, plan, destroyed) = room.leave(1);
     assert!(left);
@@ -241,7 +276,10 @@ fn non_host_operations_denied() {
     assert_err(room.toggle_lock(2), "ERROR_PERMISSION_DENIED");
     assert_err(room.toggle_cycle(2), "ERROR_PERMISSION_DENIED");
     assert_err(room.validate_select_chart(2), "ERROR_PERMISSION_DENIED");
-    assert_err(room.commit_select_chart(2, 1, "C".into()), "ERROR_PERMISSION_DENIED");
+    assert_err(
+        room.commit_select_chart(2, 1, "C".into()),
+        "ERROR_PERMISSION_DENIED",
+    );
     assert_err(room.require_start(2), "ERROR_PERMISSION_DENIED");
 }
 
@@ -264,8 +302,14 @@ fn lock_broadcasts_message() {
     room.join(p1.clone(), false).unwrap();
     room.join(p2.clone(), false).unwrap();
     let plan = room.toggle_lock(1).unwrap();
-    assert!(matches!(message_for(&plan, 2), Some(Message::LockRoom { lock: true })));
-    assert!(matches!(message_for(&plan, 1), Some(Message::LockRoom { lock: true })));
+    assert!(matches!(
+        message_for(&plan, 2),
+        Some(Message::LockRoom { lock: true })
+    ));
+    assert!(matches!(
+        message_for(&plan, 1),
+        Some(Message::LockRoom { lock: true })
+    ));
 }
 
 #[test]
@@ -277,11 +321,17 @@ fn cycle_toggle_and_broadcast() {
     room.join(p2.clone(), false).unwrap();
     let plan = room.toggle_cycle(1).unwrap();
     assert!(room.setting().cycle);
-    assert!(matches!(message_for(&plan, 2), Some(Message::CycleRoom { cycle: true })));
+    assert!(matches!(
+        message_for(&plan, 2),
+        Some(Message::CycleRoom { cycle: true })
+    ));
     // 再次切换回 false
     let plan = room.toggle_cycle(1).unwrap();
     assert!(!room.setting().cycle);
-    assert!(matches!(message_for(&plan, 2), Some(Message::CycleRoom { cycle: false })));
+    assert!(matches!(
+        message_for(&plan, 2),
+        Some(Message::CycleRoom { cycle: false })
+    ));
 }
 
 // ============================== 聊天 ==============================
@@ -294,11 +344,23 @@ fn chat_broadcast_and_disabled() {
     room.join(p1.clone(), false).unwrap();
     room.join(p2.clone(), false).unwrap();
     let plan = room.chat(1, "hello 世界".into()).unwrap();
-    assert!(matches!(message_for(&plan, 2), Some(Message::Chat { user: 1, content }) if content == "hello 世界"));
+    assert!(
+        matches!(message_for(&plan, 2), Some(Message::Chat { user: 1, content }) if content == "hello 世界")
+    );
     // 房主也被广播
-    assert!(matches!(message_for(&plan, 1), Some(Message::Chat { user: 1, .. })));
+    assert!(matches!(
+        message_for(&plan, 1),
+        Some(Message::Chat { user: 1, .. })
+    ));
 
-    let room2 = LocalRoom::new("NC", RoomSetting { chat: false, ..Default::default() }, || {});
+    let room2 = LocalRoom::new(
+        "NC",
+        RoomSetting {
+            chat: false,
+            ..Default::default()
+        },
+        || {},
+    );
     room2.join(player(1, "A"), false).unwrap();
     assert_err(room2.chat(1, "hi".into()), "ERROR_CHAT_NOT_ENABLED");
 }
@@ -315,8 +377,14 @@ fn select_chart_commits_and_broadcasts() {
     let plan = room.commit_select_chart(1, 42, "Chart42".into()).unwrap();
     assert!(matches!(message_for(&plan, 2),
         Some(Message::SelectChart { user: 1, id: 42, name }) if name == "Chart42"));
-    assert_eq!(state_changes(&plan), vec![GameState::SelectChart { chart_id: Some(42) }]);
-    assert_eq!(room.game_state_protocol(), GameState::SelectChart { chart_id: Some(42) });
+    assert_eq!(
+        state_changes(&plan),
+        vec![GameState::SelectChart { chart_id: Some(42) }]
+    );
+    assert_eq!(
+        room.game_state_protocol(),
+        GameState::SelectChart { chart_id: Some(42) }
+    );
 }
 
 #[test]
@@ -326,7 +394,10 @@ fn select_chart_again_updates_chart() {
     room.join(p1.clone(), false).unwrap();
     room.commit_select_chart(1, 1, "C1".into()).unwrap();
     room.commit_select_chart(1, 2, "C2".into()).unwrap();
-    assert_eq!(room.game_state_protocol(), GameState::SelectChart { chart_id: Some(2) });
+    assert_eq!(
+        room.game_state_protocol(),
+        GameState::SelectChart { chart_id: Some(2) }
+    );
 }
 
 #[test]
@@ -335,7 +406,10 @@ fn select_chart_wrong_state() {
     let p1 = player(1, "A");
     setup_solo_playing(&room, &p1); // 进入 Playing
     assert_err(room.validate_select_chart(1), "ERROR_INVALID_STATE");
-    assert_err(room.commit_select_chart(1, 99, "C".into()), "ERROR_INVALID_STATE");
+    assert_err(
+        room.commit_select_chart(1, 99, "C".into()),
+        "ERROR_INVALID_STATE",
+    );
 }
 
 // ============================== 开局 ==============================
@@ -371,10 +445,19 @@ fn require_start_multi_enters_wait_for_ready() {
     room.join(p2.clone(), false).unwrap();
     room.commit_select_chart(1, 42, "C42".into()).unwrap();
     let plan = room.require_start(1).unwrap();
-    assert!(matches!(room.game_state_protocol(), GameState::WaitForReady));
+    assert!(matches!(
+        room.game_state_protocol(),
+        GameState::WaitForReady
+    ));
     assert_eq!(state_changes(&plan), vec![GameState::WaitForReady]);
-    assert!(matches!(message_for(&plan, 1), Some(Message::GameStart { user: 1 })));
-    assert!(matches!(message_for(&plan, 2), Some(Message::GameStart { user: 1 })));
+    assert!(matches!(
+        message_for(&plan, 1),
+        Some(Message::GameStart { user: 1 })
+    ));
+    assert!(matches!(
+        message_for(&plan, 2),
+        Some(Message::GameStart { user: 1 })
+    ));
 }
 
 #[test]
@@ -399,10 +482,18 @@ fn ready_all_starts_game() {
     assert!(started);
     assert!(matches!(room.game_state_protocol(), GameState::Playing));
     // 广播：Ready(p2) message + ChangeState(Playing) + StartPlaying
-    assert!(matches!(message_for(&plan, 1), Some(Message::Ready { user: 2 })));
+    assert!(matches!(
+        message_for(&plan, 1),
+        Some(Message::Ready { user: 2 })
+    ));
     assert_eq!(state_changes(&plan), vec![GameState::Playing]);
-    assert!(packets_for(&plan, 1).iter().any(|p| matches!(p,
-        ClientBoundPacket::Message { message: Message::StartPlaying, .. })));
+    assert!(packets_for(&plan, 1).iter().any(|p| matches!(
+        p,
+        ClientBoundPacket::Message {
+            message: Message::StartPlaying,
+            ..
+        }
+    )));
 }
 
 #[test]
@@ -419,10 +510,18 @@ fn ready_partial_does_not_start() {
 
     let (plan, started) = room.ready(p2.id()).unwrap();
     assert!(!started, "p3 未 ready");
-    assert!(matches!(room.game_state_protocol(), GameState::WaitForReady));
+    assert!(matches!(
+        room.game_state_protocol(),
+        GameState::WaitForReady
+    ));
     assert!(!plan.iter().any(|(_, f)| {
-        matches!(common::decode_frame_payload(f),
-            Some(ClientBoundPacket::ChangeState { game_state: GameState::Playing, .. }))
+        matches!(
+            common::decode_frame_payload(f),
+            Some(ClientBoundPacket::ChangeState {
+                game_state: GameState::Playing,
+                ..
+            })
+        )
     }));
 
     // p3 ready → 开始
@@ -469,11 +568,17 @@ fn cancel_ready_removes_and_broadcasts() {
     room.require_start(1).unwrap();
 
     let plan = room.cancel_ready(1).unwrap();
-    assert!(matches!(message_for(&plan, 2), Some(Message::CancelReady { user: 1 })));
+    assert!(matches!(
+        message_for(&plan, 2),
+        Some(Message::CancelReady { user: 1 })
+    ));
     // p1 取消后 p2 ready 不再能开局（p1 未 ready）
     let (_, started) = room.ready(p2.id()).unwrap();
     assert!(!started);
-    assert!(matches!(room.game_state_protocol(), GameState::WaitForReady));
+    assert!(matches!(
+        room.game_state_protocol(),
+        GameState::WaitForReady
+    ));
 }
 
 #[test]
@@ -494,15 +599,37 @@ fn solo_played_ends_game() {
     let outcome = room.commit_played(1, 990_000, 99.0, true).unwrap();
     assert!(outcome.game_ended);
     assert!(outcome.recording.is_none()); // 无 touch/judge
-    assert!(matches!(room.game_state_protocol(), GameState::SelectChart { chart_id: Some(42) }));
+    assert!(matches!(
+        room.game_state_protocol(),
+        GameState::SelectChart { chart_id: Some(42) }
+    ));
     // 广播含 Played message + ChangeState(SelectChart) + GameEnd
     let pkts = packets_for(&outcome.broadcasts, 1);
-    assert!(pkts.iter().any(|p| matches!(p,
-        ClientBoundPacket::Message { message: Message::Played { user: 1, score: 990_000, .. }, .. })));
-    assert!(pkts.iter().any(|p| matches!(p,
-        ClientBoundPacket::ChangeState { game_state: GameState::SelectChart { chart_id: Some(42) }, .. })));
-    assert!(pkts.iter().any(|p| matches!(p,
-        ClientBoundPacket::Message { message: Message::GameEnd, .. })));
+    assert!(pkts.iter().any(|p| matches!(
+        p,
+        ClientBoundPacket::Message {
+            message: Message::Played {
+                user: 1,
+                score: 990_000,
+                ..
+            },
+            ..
+        }
+    )));
+    assert!(pkts.iter().any(|p| matches!(
+        p,
+        ClientBoundPacket::ChangeState {
+            game_state: GameState::SelectChart { chart_id: Some(42) },
+            ..
+        }
+    )));
+    assert!(pkts.iter().any(|p| matches!(
+        p,
+        ClientBoundPacket::Message {
+            message: Message::GameEnd,
+            ..
+        }
+    )));
 }
 
 #[test]
@@ -523,8 +650,14 @@ fn played_idempotent_within_game() {
 
     // 对局结束后状态回到 SelectChart，再 played 属错误状态
     room.commit_played(2, 300, 30.0, false).unwrap(); // 全员完成 → 结束
-    assert!(matches!(room.game_state_protocol(), GameState::SelectChart { chart_id: Some(42) }));
-    assert_err(room.commit_played(1, 400, 40.0, true), "ERROR_INVALID_STATE");
+    assert!(matches!(
+        room.game_state_protocol(),
+        GameState::SelectChart { chart_id: Some(42) }
+    ));
+    assert_err(
+        room.commit_played(1, 400, 40.0, true),
+        "ERROR_INVALID_STATE",
+    );
 }
 
 #[test]
@@ -535,15 +668,23 @@ fn abort_idempotent_within_game() {
     setup_duo_playing(&room, &p1, &p2);
     let outcome = room.commit_abort(1).unwrap();
     assert!(!outcome.game_ended, "p2 未完成");
-    assert!(packets_for(&outcome.broadcasts, 1).iter().any(|p| matches!(p,
-        ClientBoundPacket::Message { message: Message::Abort { user: 1 }, .. })));
+    assert!(packets_for(&outcome.broadcasts, 1).iter().any(|p| matches!(
+        p,
+        ClientBoundPacket::Message {
+            message: Message::Abort { user: 1 },
+            ..
+        }
+    )));
     // 同一对局内重复 abort → 幂等空计划
     let second = room.commit_abort(1).unwrap();
     assert!(!second.game_ended);
     assert!(second.broadcasts.is_empty());
     // 对局结束后 abort → 错误状态
     room.commit_played(2, 1, 1.0, false).unwrap();
-    assert!(matches!(room.game_state_protocol(), GameState::SelectChart { chart_id: Some(42) }));
+    assert!(matches!(
+        room.game_state_protocol(),
+        GameState::SelectChart { chart_id: Some(42) }
+    ));
     assert_commit_err(room.commit_abort(1), "ERROR_INVALID_STATE");
 }
 
@@ -571,12 +712,25 @@ fn duo_game_ends_when_all_done() {
     // p2 played → 全员完成 → 结束
     let out2 = room.commit_played(2, 500_000, 95.0, false).unwrap();
     assert!(out2.game_ended);
-    assert!(matches!(room.game_state_protocol(), GameState::SelectChart { chart_id: Some(42) }));
+    assert!(matches!(
+        room.game_state_protocol(),
+        GameState::SelectChart { chart_id: Some(42) }
+    ));
     // 两个玩家都收到 GameEnd
-    assert!(packets_for(&out2.broadcasts, 1).iter().any(|p| matches!(p,
-        ClientBoundPacket::Message { message: Message::GameEnd, .. })));
-    assert!(packets_for(&out2.broadcasts, 2).iter().any(|p| matches!(p,
-        ClientBoundPacket::Message { message: Message::GameEnd, .. })));
+    assert!(packets_for(&out2.broadcasts, 1).iter().any(|p| matches!(
+        p,
+        ClientBoundPacket::Message {
+            message: Message::GameEnd,
+            ..
+        }
+    )));
+    assert!(packets_for(&out2.broadcasts, 2).iter().any(|p| matches!(
+        p,
+        ClientBoundPacket::Message {
+            message: Message::GameEnd,
+            ..
+        }
+    )));
 }
 
 #[test]
@@ -591,7 +745,10 @@ fn all_offline_ends_game() {
     // 任意一人 played → 判定：无在线玩家 → 结束
     let out = room.commit_played(1, 0, 0.0, false).unwrap();
     assert!(out.game_ended);
-    assert!(matches!(room.game_state_protocol(), GameState::SelectChart { chart_id: Some(42) }));
+    assert!(matches!(
+        room.game_state_protocol(),
+        GameState::SelectChart { chart_id: Some(42) }
+    ));
 }
 
 #[test]
@@ -624,24 +781,50 @@ fn check_played_semantics() {
     let p1 = player(1, "A");
     let p2 = player(2, "B");
     setup_duo_playing(&room, &p1, &p2);
-    assert!(matches!(room.check_played(1).unwrap(), PlayedCheck::CanPlay { chart_id: Some(42), .. }));
+    assert!(matches!(
+        room.check_played(1).unwrap(),
+        PlayedCheck::CanPlay {
+            chart_id: Some(42),
+            ..
+        }
+    ));
     room.commit_abort(1).unwrap();
-    assert!(matches!(room.check_played(1).unwrap(), PlayedCheck::AlreadyDone));
-    assert!(matches!(room.check_played(2).unwrap(), PlayedCheck::CanPlay { .. }));
+    assert!(matches!(
+        room.check_played(1).unwrap(),
+        PlayedCheck::AlreadyDone
+    ));
+    assert!(matches!(
+        room.check_played(2).unwrap(),
+        PlayedCheck::CanPlay { .. }
+    ));
     // 对局结束后（状态回 SelectChart）→ 错误状态
     room.commit_abort(2).unwrap();
-    assert!(matches!(room.game_state_protocol(), GameState::SelectChart { chart_id: Some(42) }));
+    assert!(matches!(
+        room.game_state_protocol(),
+        GameState::SelectChart { chart_id: Some(42) }
+    ));
     assert_err(room.check_played(1), "ERROR_INVALID_STATE");
 }
 
 // ============================== touch/judge 与录制 ==============================
 
 fn one_frame(t: f32) -> TouchFrame {
-    TouchFrame { time: t, points: vec![TouchPoint { id: 0, pos: CompactPos::from_f32(0.5, 0.5) }] }
+    TouchFrame {
+        time: t,
+        points: vec![TouchPoint {
+            id: 0,
+            pos: CompactPos::from_f32(0.5, 0.5),
+        }],
+    }
 }
 
 fn one_judge(t: f32) -> JudgeEvent {
-    JudgeEvent { time: t, line_id: 0, note_id: 1, judgement: Judgement::Perfect }
+    JudgeEvent {
+        time: t,
+        line_id: 0,
+        note_id: 1,
+        judgement: Judgement::Perfect,
+    }
 }
 
 #[test]
@@ -725,8 +908,13 @@ fn touch_forwarded_in_playing_too() {
     room.ready(50).unwrap();
     assert!(matches!(room.game_state_protocol(), GameState::Playing));
     let plan = room.touch_send(1, vec![one_frame(1.0)]);
-    assert!(packets_for(&plan, 50).iter().any(|p| matches!(p,
-        ClientBoundPacket::Touches { from_player_id: 1, .. })));
+    assert!(packets_for(&plan, 50).iter().any(|p| matches!(
+        p,
+        ClientBoundPacket::Touches {
+            from_player_id: 1,
+            ..
+        }
+    )));
 }
 
 // ============================== 房主转移 ==============================
@@ -755,17 +943,36 @@ fn host_transfer_broadcasts() {
     room.join(p3.clone(), false).unwrap();
     let (_left, plan, _d) = room.leave(1);
     // 旧房主收到 ChangeHost(false)
-    assert!(packets_for(&plan, 1).iter().any(|p| matches!(p,
-        ClientBoundPacket::ChangeHost { is_host: false, .. })));
+    assert!(
+        packets_for(&plan, 1)
+            .iter()
+            .any(|p| matches!(p, ClientBoundPacket::ChangeHost { is_host: false, .. }))
+    );
     // 新房主（2）收到 ChangeHost(true)，不收 NewHost
-    assert!(packets_for(&plan, 2).iter().any(|p| matches!(p,
-        ClientBoundPacket::ChangeHost { is_host: true, .. })));
-    assert!(!packets_for(&plan, 2).iter().any(|p| matches!(p,
-        ClientBoundPacket::Message { message: Message::NewHost { .. }, .. })));
+    assert!(
+        packets_for(&plan, 2)
+            .iter()
+            .any(|p| matches!(p, ClientBoundPacket::ChangeHost { is_host: true, .. }))
+    );
+    assert!(!packets_for(&plan, 2).iter().any(|p| matches!(
+        p,
+        ClientBoundPacket::Message {
+            message: Message::NewHost { .. },
+            ..
+        }
+    )));
     // 其他成员（3）收到 NewHost(2) 与 LeaveRoom(1)（NewHost 先广播）
-    assert!(matches!(message_for(&plan, 3), Some(Message::NewHost { user: 2 })));
-    assert!(packets_for(&plan, 3).iter().any(|p| matches!(p,
-        ClientBoundPacket::Message { message: Message::LeaveRoom { user: 1, .. }, .. })));
+    assert!(matches!(
+        message_for(&plan, 3),
+        Some(Message::NewHost { user: 2 })
+    ));
+    assert!(packets_for(&plan, 3).iter().any(|p| matches!(
+        p,
+        ClientBoundPacket::Message {
+            message: Message::LeaveRoom { user: 1, .. },
+            ..
+        }
+    )));
 }
 
 #[test]
@@ -784,7 +991,14 @@ fn host_transfer_last_player_clears_host() {
 
 #[test]
 fn cycle_mode_transfers_host_on_game_end() {
-    let room = LocalRoom::new("CY", RoomSetting { cycle: true, ..Default::default() }, || {});
+    let room = LocalRoom::new(
+        "CY",
+        RoomSetting {
+            cycle: true,
+            ..Default::default()
+        },
+        || {},
+    );
     let p1 = player(1, "A");
     let p2 = player(2, "B");
     let p3 = player(3, "C");
@@ -804,10 +1018,16 @@ fn cycle_mode_transfers_host_on_game_end() {
     assert!(out.game_ended);
     // cycle 模式：房主转移到 2（>1 的最小 id）
     assert!(room.is_host(2), "cycle 模式下对局结束转移房主");
-    assert!(packets_for(&out.broadcasts, 2).iter().any(|p| matches!(p,
-        ClientBoundPacket::ChangeHost { is_host: true, .. })));
-    assert!(packets_for(&out.broadcasts, 1).iter().any(|p| matches!(p,
-        ClientBoundPacket::ChangeHost { is_host: false, .. })));
+    assert!(
+        packets_for(&out.broadcasts, 2)
+            .iter()
+            .any(|p| matches!(p, ClientBoundPacket::ChangeHost { is_host: true, .. }))
+    );
+    assert!(
+        packets_for(&out.broadcasts, 1)
+            .iter()
+            .any(|p| matches!(p, ClientBoundPacket::ChangeHost { is_host: false, .. }))
+    );
 }
 
 #[test]
@@ -832,11 +1052,17 @@ fn cleanup_wait_ready_sends_cancel_ready() {
     room.join(p2.clone(), false).unwrap();
     room.commit_select_chart(1, 42, "C42".into()).unwrap();
     room.require_start(1).unwrap(); // WaitForReady，p1 自动 ready
-    assert!(matches!(room.game_state_protocol(), GameState::WaitForReady));
+    assert!(matches!(
+        room.game_state_protocol(),
+        GameState::WaitForReady
+    ));
 
     // 挂起清理：p1 的 ready 被撤销并广播
     let plan = room.cleanup_for_suspend(1);
-    assert!(matches!(message_for(&plan, 2), Some(Message::CancelReady { user: 1 })));
+    assert!(matches!(
+        message_for(&plan, 2),
+        Some(Message::CancelReady { user: 1 })
+    ));
     // 未 ready 的玩家不受影响
     let plan2 = room.cleanup_for_suspend(2);
     assert!(plan2.is_empty(), "p2 未 ready，无需清理");
@@ -849,11 +1075,22 @@ fn cleanup_playing_sends_abort_and_may_end_game() {
     setup_solo_playing(&room, &p1);
     let plan = room.cleanup_for_suspend(1);
     // 单人：abort + 全员（唯一在线）完成 → GameEnd + 回 SelectChart
-    assert!(matches!(message_for(&plan, 1), Some(Message::Abort { user: 1 })));
-    assert!(matches!(room.game_state_protocol(), GameState::SelectChart { chart_id: Some(42) }));
+    assert!(matches!(
+        message_for(&plan, 1),
+        Some(Message::Abort { user: 1 })
+    ));
+    assert!(matches!(
+        room.game_state_protocol(),
+        GameState::SelectChart { chart_id: Some(42) }
+    ));
     let pkts = packets_for(&plan, 1);
-    assert!(pkts.iter().any(|p| matches!(p,
-        ClientBoundPacket::Message { message: Message::GameEnd, .. })));
+    assert!(pkts.iter().any(|p| matches!(
+        p,
+        ClientBoundPacket::Message {
+            message: Message::GameEnd,
+            ..
+        }
+    )));
 }
 
 #[test]
@@ -864,7 +1101,10 @@ fn cleanup_playing_abort_idempotent() {
     setup_duo_playing(&room, &p1, &p2);
     // p1 挂起清理 → abort(1)，p2 未完成 → 不结束
     let plan = room.cleanup_for_suspend(1);
-    assert!(matches!(message_for(&plan, 1), Some(Message::Abort { user: 1 })));
+    assert!(matches!(
+        message_for(&plan, 1),
+        Some(Message::Abort { user: 1 })
+    ));
     assert!(matches!(room.game_state_protocol(), GameState::Playing));
     // 再次清理同一个人 → 幂等（done 已含 1）
     let plan2 = room.cleanup_for_suspend(1);
@@ -927,7 +1167,10 @@ fn join_room_data_matches() {
     room.join(p2.clone(), false).unwrap();
     room.commit_select_chart(1, 42, "C42".into()).unwrap();
     let data = room.join_room_data();
-    assert_eq!(data.game_state, GameState::SelectChart { chart_id: Some(42) });
+    assert_eq!(
+        data.game_state,
+        GameState::SelectChart { chart_id: Some(42) }
+    );
     assert_eq!(data.users.len(), 2);
     assert!(!data.live);
 }
@@ -955,7 +1198,10 @@ fn snapshot_fields() {
 fn setting_host_disabled_means_no_host() {
     let room = LocalRoom::new(
         "NH",
-        RoomSetting { host: false, ..Default::default() },
+        RoomSetting {
+            host: false,
+            ..Default::default()
+        },
         || {},
     );
     let p1 = player(1, "A");
@@ -1000,7 +1246,13 @@ async fn send_frame_hook_collects_frames() {
     room.join(p2.clone(), false).unwrap();
     let plan = room.chat(1, "ping".into()).unwrap();
     phira_mp::room::send_broadcasts(plan).await;
-    assert_eq!(p2.messages(), vec![Message::Chat { user: 1, content: "ping".into() }]);
+    assert_eq!(
+        p2.messages(),
+        vec![Message::Chat {
+            user: 1,
+            content: "ping".into()
+        }]
+    );
     // p1 也被广播
     assert_eq!(p1.messages().len(), 1);
 }

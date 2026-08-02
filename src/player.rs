@@ -276,20 +276,23 @@ impl Player for LocalPlayer {
 // ---------------------------------------------------------------------------
 
 /// token → 用户信息。
-pub type AuthProvider =
-    Arc<dyn Fn(String) -> futures::future::BoxFuture<'static, Result<Arc<UserInfo>, PhiraError>>
+pub type AuthProvider = Arc<
+    dyn Fn(String) -> futures::future::BoxFuture<'static, Result<Arc<UserInfo>, PhiraError>>
         + Send
-        + Sync>;
+        + Sync,
+>;
 /// chart_id → 谱面信息。
-pub type ChartProvider =
-    Arc<dyn Fn(i32) -> futures::future::BoxFuture<'static, Result<Arc<ChartInfo>, PhiraError>>
+pub type ChartProvider = Arc<
+    dyn Fn(i32) -> futures::future::BoxFuture<'static, Result<Arc<ChartInfo>, PhiraError>>
         + Send
-        + Sync>;
+        + Sync,
+>;
 /// record_id → 成绩。
-pub type RecordProvider =
-    Arc<dyn Fn(i32) -> futures::future::BoxFuture<'static, Result<Arc<GameRecord>, PhiraError>>
+pub type RecordProvider = Arc<
+    dyn Fn(i32) -> futures::future::BoxFuture<'static, Result<Arc<GameRecord>, PhiraError>>
         + Send
-        + Sync>;
+        + Sync,
+>;
 
 #[derive(Default)]
 pub struct Providers {
@@ -393,7 +396,10 @@ impl PlayerRegistry {
     ) -> Result<(ResolveResult, Option<ConnectionHandle>), String>
     where
         C: FnOnce(Arc<UserInfo>, Option<ConnectionHandle>) -> Arc<dyn Player>,
-        R: FnOnce(&Arc<dyn Player>, Option<ConnectionHandle>) -> Result<Option<ConnectionHandle>, String>,
+        R: FnOnce(
+            &Arc<dyn Player>,
+            Option<ConnectionHandle>,
+        ) -> Result<Option<ConnectionHandle>, String>,
     {
         let (player, created, old_conn) = {
             let mut map = self.players.lock().unwrap();
@@ -406,7 +412,11 @@ impl PlayerRegistry {
                 Some(existing) => {
                     let same_conn = conn
                         .as_ref()
-                        .map(|c| existing.bound_connection().map_or(false, |b| b.same_connection(c)))
+                        .map(|c| {
+                            existing
+                                .bound_connection()
+                                .map_or(false, |b| b.same_connection(c))
+                        })
                         .unwrap_or(false);
                     if same_conn {
                         // 同一连接重复认证（不应发生）
@@ -503,7 +513,9 @@ impl PlayerRegistry {
     pub fn remove_if_bound(&self, user_id: i32, conn: &ConnectionHandle) {
         let mut map = self.players.lock().unwrap();
         if let Some(p) = map.get(&user_id) {
-            if p.bound_connection().map_or(false, |b| b.same_connection(conn)) {
+            if p.bound_connection()
+                .map_or(false, |b| b.same_connection(conn))
+            {
                 map.remove(&user_id);
             }
         }

@@ -118,12 +118,36 @@ fn parse_log_segments(text: &str, level: Level) -> Vec<Segment> {
                 if let Some(tail) = tail.strip_prefix("| ") {
                     if let Some((target, msg)) = tail.split_once(": ") {
                         return vec![
-                            Segment { text: lvl.to_string(), color: Some(level.color()), bold: true },
-                            Segment { text: " ".to_string(), color: None, bold: false },
-                            Segment { text: time.to_string(), color: Some(Color::DarkGrey), bold: false },
-                            Segment { text: " | ".to_string(), color: Some(Color::DarkGrey), bold: false },
-                            Segment { text: target.to_string(), color: Some(Color::DarkGrey), bold: false },
-                            Segment { text: format!(": {msg}"), color: None, bold: false },
+                            Segment {
+                                text: lvl.to_string(),
+                                color: Some(level.color()),
+                                bold: true,
+                            },
+                            Segment {
+                                text: " ".to_string(),
+                                color: None,
+                                bold: false,
+                            },
+                            Segment {
+                                text: time.to_string(),
+                                color: Some(Color::DarkGrey),
+                                bold: false,
+                            },
+                            Segment {
+                                text: " | ".to_string(),
+                                color: Some(Color::DarkGrey),
+                                bold: false,
+                            },
+                            Segment {
+                                text: target.to_string(),
+                                color: Some(Color::DarkGrey),
+                                bold: false,
+                            },
+                            Segment {
+                                text: format!(": {msg}"),
+                                color: None,
+                                bold: false,
+                            },
                         ];
                     }
                 }
@@ -131,11 +155,23 @@ fn parse_log_segments(text: &str, level: Level) -> Vec<Segment> {
         }
         // 非标准行：仅 level 上色
         vec![
-            Segment { text: lvl.to_string(), color: Some(level.color()), bold: true },
-            Segment { text: rest.to_string(), color: None, bold: false },
+            Segment {
+                text: lvl.to_string(),
+                color: Some(level.color()),
+                bold: true,
+            },
+            Segment {
+                text: rest.to_string(),
+                color: None,
+                bold: false,
+            },
         ]
     } else {
-        vec![Segment { text: text.to_string(), color: None, bold: false }]
+        vec![Segment {
+            text: text.to_string(),
+            color: None,
+            bold: false,
+        }]
     }
 }
 

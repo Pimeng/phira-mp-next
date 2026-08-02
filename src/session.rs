@@ -149,7 +149,11 @@ impl SessionManager {
     }
 
     /// 仅当当前会话代次匹配时取出（重复挂起时旧超时任务失效）。
-    fn take_suspended_if_generation(&self, user_id: i32, generation: u64) -> Option<SuspendedRoomSession> {
+    fn take_suspended_if_generation(
+        &self,
+        user_id: i32,
+        generation: u64,
+    ) -> Option<SuspendedRoomSession> {
         let mut map = self.sessions.lock().unwrap();
         match map.get(&user_id) {
             Some(s) if s.generation == generation => map.remove(&user_id),
@@ -175,7 +179,11 @@ mod tests {
         std::mem::forget(rx); // 保持 tx 配对端存活 → is_online() == true
         let conn = ConnectionHandle::new_for_test(tx);
         LocalPlayer::new(
-            Arc::new(UserInfo { id, name: format!("P{id}"), ..Default::default() }),
+            Arc::new(UserInfo {
+                id,
+                name: format!("P{id}"),
+                ..Default::default()
+            }),
             conn,
         )
     }
@@ -187,7 +195,9 @@ mod tests {
         let room = LocalRoom::new("R", RoomSetting::default(), || {});
         room.join(player.clone(), false).unwrap();
 
-        sm.suspend(player.clone(), room.clone(), || {}).await.unwrap();
+        sm.suspend(player.clone(), room.clone(), || {})
+            .await
+            .unwrap();
         assert!(sm.has_suspended(1));
 
         let s = sm.take_suspended(1).unwrap();
@@ -228,7 +238,10 @@ mod tests {
         drop(conn1);
 
         // 挂起
-        ctx.sessions.suspend(player.clone(), room.clone(), || {}).await.unwrap();
+        ctx.sessions
+            .suspend(player.clone(), room.clone(), || {})
+            .await
+            .unwrap();
         assert!(ctx.sessions.has_suspended(7));
 
         // 重连（新连接）→ 应恢复挂起房间
@@ -250,9 +263,11 @@ mod tests {
         room.join(player.clone(), false).unwrap();
         let called = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let c = called.clone();
-        sm.suspend(player.clone(), room.clone(), move || c.store(true, std::sync::atomic::Ordering::SeqCst))
-            .await
-            .unwrap();
+        sm.suspend(player.clone(), room.clone(), move || {
+            c.store(true, std::sync::atomic::Ordering::SeqCst)
+        })
+        .await
+        .unwrap();
         // 挂起后 remover 不应立即调用（超时未到）
         assert!(!called.load(std::sync::atomic::Ordering::SeqCst));
         assert!(sm.has_suspended(1));
@@ -267,14 +282,19 @@ mod tests {
         room.join(player.clone(), false).unwrap();
         let called = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let c = called.clone();
-        sm.suspend(player.clone(), room.clone(), move || c.store(true, std::sync::atomic::Ordering::SeqCst))
-            .await
-            .unwrap();
+        sm.suspend(player.clone(), room.clone(), move || {
+            c.store(true, std::sync::atomic::Ordering::SeqCst)
+        })
+        .await
+        .unwrap();
         // resume 取出（take 语义）→ 超时任务 take 失败 → remover 不触发
         let s = sm.resume(&player).expect("resume should succeed");
         assert!(s.room.contains_member(1));
         tokio::time::sleep(Duration::from_millis(200)).await;
-        assert!(!called.load(std::sync::atomic::Ordering::SeqCst), "resume should cancel timeout");
+        assert!(
+            !called.load(std::sync::atomic::Ordering::SeqCst),
+            "resume should cancel timeout"
+        );
     }
 
     #[tokio::test]
@@ -286,9 +306,11 @@ mod tests {
         room.join(player.clone(), false).unwrap();
         let called = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let c = called.clone();
-        sm.suspend(player.clone(), room.clone(), move || c.store(true, std::sync::atomic::Ordering::SeqCst))
-            .await
-            .unwrap();
+        sm.suspend(player.clone(), room.clone(), move || {
+            c.store(true, std::sync::atomic::Ordering::SeqCst)
+        })
+        .await
+        .unwrap();
         // 等超时触发
         for _ in 0..50 {
             if called.load(std::sync::atomic::Ordering::SeqCst) {
@@ -296,7 +318,10 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        assert!(called.load(std::sync::atomic::Ordering::SeqCst), "timeout should call remover");
+        assert!(
+            called.load(std::sync::atomic::Ordering::SeqCst),
+            "timeout should call remover"
+        );
         assert!(!room.contains_member(1), "timeout should force leave");
     }
 
@@ -310,23 +335,33 @@ mod tests {
         let first = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let second = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let f = first.clone();
-        sm.suspend(player.clone(), room.clone(), move || f.store(true, std::sync::atomic::Ordering::SeqCst))
-            .await
-            .unwrap();
+        sm.suspend(player.clone(), room.clone(), move || {
+            f.store(true, std::sync::atomic::Ordering::SeqCst)
+        })
+        .await
+        .unwrap();
         let s = second.clone();
-        sm.suspend(player.clone(), room.clone(), move || s.store(true, std::sync::atomic::Ordering::SeqCst))
-            .await
-            .unwrap();
+        sm.suspend(player.clone(), room.clone(), move || {
+            s.store(true, std::sync::atomic::Ordering::SeqCst)
+        })
+        .await
+        .unwrap();
         // 第一次挂起被第二次取代：第一次 remover 不触发，第二次触发
         tokio::time::sleep(Duration::from_millis(90)).await;
-        assert!(!first.load(std::sync::atomic::Ordering::SeqCst), "old suspend timeout should be cancelled");
+        assert!(
+            !first.load(std::sync::atomic::Ordering::SeqCst),
+            "old suspend timeout should be cancelled"
+        );
         for _ in 0..30 {
             if second.load(std::sync::atomic::Ordering::SeqCst) {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        assert!(second.load(std::sync::atomic::Ordering::SeqCst), "second suspend should time out");
+        assert!(
+            second.load(std::sync::atomic::Ordering::SeqCst),
+            "second suspend should time out"
+        );
     }
 
     #[tokio::test]
@@ -342,7 +377,9 @@ mod tests {
         let player = make_player(1);
         let room = LocalRoom::new("R", RoomSetting::default(), || {});
         room.join(player.clone(), false).unwrap();
-        sm.suspend(player.clone(), room.clone(), || {}).await.unwrap();
+        sm.suspend(player.clone(), room.clone(), || {})
+            .await
+            .unwrap();
         // 玩家离开房间（会话仍挂起）→ resume 校验失败
         room.leave(1);
         assert!(sm.resume(&player).is_err());

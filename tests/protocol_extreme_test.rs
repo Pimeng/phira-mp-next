@@ -12,17 +12,18 @@
 use bytes::{BufMut, Bytes, BytesMut};
 use phira_mp::bytes::{CodecError, Decode, VarIntError};
 use phira_mp::float16::{float_to_half, half_to_float};
-use phira_mp::frame::{encode_frame, FrameDecoder, FrameError};
+use phira_mp::frame::{FrameDecoder, FrameError, encode_frame};
+use phira_mp::packet::PacketResult;
 use phira_mp::packet::clientbound::{
-    encode_packet, AuthenticateData, ClientBoundPacket, JoinRoomData,
+    AuthenticateData, ClientBoundPacket, JoinRoomData, encode_packet,
 };
 use phira_mp::packet::data::{
-    CompactPos, FullUserProfile, JudgeEvent, Judgement, RoomInfo, TouchFrame, TouchPoint, UserProfile,
+    CompactPos, FullUserProfile, JudgeEvent, Judgement, RoomInfo, TouchFrame, TouchPoint,
+    UserProfile,
 };
 use phira_mp::packet::message::Message;
 use phira_mp::packet::serverbound::ServerBoundPacket;
 use phira_mp::packet::state::GameState;
-use phira_mp::packet::PacketResult;
 
 // ============================== VarInt ==============================
 
@@ -30,7 +31,10 @@ use phira_mp::packet::PacketResult;
 struct Lcg(u64);
 impl Lcg {
     fn next(&mut self) -> u64 {
-        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         self.0
     }
 }
@@ -94,10 +98,22 @@ fn varint_too_long_rejected() {
 
 #[test]
 fn varint_truncated_waits() {
-    assert_eq!(phira_mp::bytes::decode_varint(&[]).unwrap_err(), VarIntError::NeedMoreData);
-    assert_eq!(phira_mp::bytes::decode_varint(&[0x80]).unwrap_err(), VarIntError::NeedMoreData);
-    assert_eq!(phira_mp::bytes::decode_varint(&[0x80, 0x80]).unwrap_err(), VarIntError::NeedMoreData);
-    assert_eq!(phira_mp::bytes::decode_varint(&[0xFF, 0xFF, 0x7F]).unwrap(), (2097151, 3));
+    assert_eq!(
+        phira_mp::bytes::decode_varint(&[]).unwrap_err(),
+        VarIntError::NeedMoreData
+    );
+    assert_eq!(
+        phira_mp::bytes::decode_varint(&[0x80]).unwrap_err(),
+        VarIntError::NeedMoreData
+    );
+    assert_eq!(
+        phira_mp::bytes::decode_varint(&[0x80, 0x80]).unwrap_err(),
+        VarIntError::NeedMoreData
+    );
+    assert_eq!(
+        phira_mp::bytes::decode_varint(&[0xFF, 0xFF, 0x7F]).unwrap(),
+        (2097151, 3)
+    );
 }
 
 #[test]
@@ -201,7 +217,10 @@ fn frame_empty_payload_is_indistinguishable_from_nul() {
     assert_eq!(frame[0], 0x00);
     let mut dec = FrameDecoder::new();
     dec.feed(&frame);
-    assert!(dec.next_frame().unwrap().is_none(), "空帧与 NUL 前缀不可区分 → 等待");
+    assert!(
+        dec.next_frame().unwrap().is_none(),
+        "空帧与 NUL 前缀不可区分 → 等待"
+    );
 }
 
 #[test]
@@ -229,7 +248,10 @@ fn frame_large_payload_fragmented() {
     for (i, chunk) in chunks.iter().enumerate() {
         dec.feed(chunk);
         if i < chunks.len() - 1 {
-            assert!(dec.next_frame().unwrap().is_none(), "应等待完整帧 (chunk {i})");
+            assert!(
+                dec.next_frame().unwrap().is_none(),
+                "应等待完整帧 (chunk {i})"
+            );
         }
     }
     let out = dec.next_frame().unwrap().expect("large frame");
@@ -316,7 +338,10 @@ fn float_to_half_golden() {
     assert_eq!(float_to_half(f32::INFINITY), 0x7C00);
     assert_eq!(float_to_half(f32::NEG_INFINITY), 0xFC00);
     let nan = float_to_half(f32::NAN);
-    assert!(nan & 0x7C00 == 0x7C00 && nan & 0x03FF != 0, "NaN preserved: {nan:#06x}");
+    assert!(
+        nan & 0x7C00 == 0x7C00 && nan & 0x03FF != 0,
+        "NaN preserved: {nan:#06x}"
+    );
 }
 
 #[test]
@@ -352,7 +377,10 @@ fn float16_round_trip_float_approx() {
         }
         if f.abs() < 2f32.powi(-14) {
             // 次正规区：绝对误差 ≤ 半个最小次正规 ULP（round-to-nearest）
-            assert!((back - f).abs() <= 2f32.powi(-24) * 1.5, "f={f} back={back}");
+            assert!(
+                (back - f).abs() <= 2f32.powi(-24) * 1.5,
+                "f={f} back={back}"
+            );
             continue;
         }
         let rel = ((back - f).abs() / f.abs()).max(1e-30);
@@ -384,19 +412,42 @@ fn msg_roundtrip(m: &Message) {
 
 #[test]
 fn message_all_variants_roundtrip() {
-    msg_roundtrip(&Message::Chat { user: 1, content: "hi".into() });
+    msg_roundtrip(&Message::Chat {
+        user: 1,
+        content: "hi".into(),
+    });
     msg_roundtrip(&Message::CreateRoom { user: 2 });
-    msg_roundtrip(&Message::JoinRoom { user: 3, name: "N".into() });
-    msg_roundtrip(&Message::LeaveRoom { user: 4, name: "N".into() });
+    msg_roundtrip(&Message::JoinRoom {
+        user: 3,
+        name: "N".into(),
+    });
+    msg_roundtrip(&Message::LeaveRoom {
+        user: 4,
+        name: "N".into(),
+    });
     msg_roundtrip(&Message::NewHost { user: 5 });
-    msg_roundtrip(&Message::SelectChart { user: 6, name: "C".into(), id: 42 });
+    msg_roundtrip(&Message::SelectChart {
+        user: 6,
+        name: "C".into(),
+        id: 42,
+    });
     msg_roundtrip(&Message::GameStart { user: 7 });
     msg_roundtrip(&Message::Ready { user: 8 });
     msg_roundtrip(&Message::CancelReady { user: 9 });
     msg_roundtrip(&Message::CancelGame { user: 10 });
     msg_roundtrip(&Message::StartPlaying);
-    msg_roundtrip(&Message::Played { user: 11, score: 999_999, accuracy: 100.0, full_combo: true });
-    msg_roundtrip(&Message::Played { user: 12, score: 0, accuracy: 0.0, full_combo: false });
+    msg_roundtrip(&Message::Played {
+        user: 11,
+        score: 999_999,
+        accuracy: 100.0,
+        full_combo: true,
+    });
+    msg_roundtrip(&Message::Played {
+        user: 12,
+        score: 0,
+        accuracy: 0.0,
+        full_combo: false,
+    });
     msg_roundtrip(&Message::GameEnd);
     msg_roundtrip(&Message::Abort { user: 13 });
     msg_roundtrip(&Message::LockRoom { lock: true });
@@ -417,18 +468,36 @@ fn message_unknown_id() {
 fn message_ids_stable() {
     // 协议 ID 必须稳定（0x00..=0x0F）
     let ids = [
-        Message::Chat { user: 0, content: String::new() },
+        Message::Chat {
+            user: 0,
+            content: String::new(),
+        },
         Message::CreateRoom { user: 0 },
-        Message::JoinRoom { user: 0, name: String::new() },
-        Message::LeaveRoom { user: 0, name: String::new() },
+        Message::JoinRoom {
+            user: 0,
+            name: String::new(),
+        },
+        Message::LeaveRoom {
+            user: 0,
+            name: String::new(),
+        },
         Message::NewHost { user: 0 },
-        Message::SelectChart { user: 0, name: String::new(), id: 0 },
+        Message::SelectChart {
+            user: 0,
+            name: String::new(),
+            id: 0,
+        },
         Message::GameStart { user: 0 },
         Message::Ready { user: 0 },
         Message::CancelReady { user: 0 },
         Message::CancelGame { user: 0 },
         Message::StartPlaying,
-        Message::Played { user: 0, score: 0, accuracy: 0.0, full_combo: false },
+        Message::Played {
+            user: 0,
+            score: 0,
+            accuracy: 0.0,
+            full_combo: false,
+        },
         Message::GameEnd,
         Message::Abort { user: 0 },
         Message::LockRoom { lock: false },
@@ -452,8 +521,12 @@ fn state_roundtrip(s: &GameState) {
 fn game_state_all_variants() {
     state_roundtrip(&GameState::SelectChart { chart_id: None });
     state_roundtrip(&GameState::SelectChart { chart_id: Some(0) });
-    state_roundtrip(&GameState::SelectChart { chart_id: Some(i32::MAX) });
-    state_roundtrip(&GameState::SelectChart { chart_id: Some(i32::MIN) });
+    state_roundtrip(&GameState::SelectChart {
+        chart_id: Some(i32::MAX),
+    });
+    state_roundtrip(&GameState::SelectChart {
+        chart_id: Some(i32::MIN),
+    });
     state_roundtrip(&GameState::WaitForReady);
     state_roundtrip(&GameState::Playing);
 }
@@ -475,14 +548,19 @@ fn packet_result_roundtrip() {
     encode_void_result(&PacketResult::Success(()), &mut buf);
     assert_eq!(buf.to_vec(), vec![0x01]);
     let mut r: &[u8] = &buf;
-    assert!(matches!(PacketResult::<()>::decode(&mut r).unwrap(), PacketResult::Success(())));
+    assert!(matches!(
+        PacketResult::<()>::decode(&mut r).unwrap(),
+        PacketResult::Success(())
+    ));
 
     // 失败消息（含超长消息）
     for msg in vec!["".to_string(), "error".to_string(), "x".repeat(131072)] {
         buf.clear();
         encode_void_result(&PacketResult::Failed(msg.clone()), &mut buf);
         let mut r: &[u8] = &buf;
-        assert!(matches!(PacketResult::<()>::decode(&mut r).unwrap(), PacketResult::Failed(m) if m == msg));
+        assert!(
+            matches!(PacketResult::<()>::decode(&mut r).unwrap(), PacketResult::Failed(m) if m == msg)
+        );
     }
 }
 
@@ -492,7 +570,11 @@ fn sb_roundtrip(p: &ServerBoundPacket) {
     let mut body = BytesMut::new();
     phira_mp::bytes::Encode::encode(p, &mut body);
     let dec = ServerBoundPacket::decode_frame(&body).unwrap();
-    assert_eq!(format!("{p:?}"), format!("{dec:?}"), "serverbound roundtrip");
+    assert_eq!(
+        format!("{p:?}"),
+        format!("{dec:?}"),
+        "serverbound roundtrip"
+    );
 }
 
 #[test]
@@ -501,42 +583,126 @@ fn serverbound_all_packets_roundtrip() {
     let tframe = TouchFrame {
         time: 12.5,
         points: vec![
-            TouchPoint { id: 0, pos: CompactPos::from_f32(0.25, 0.75) },
-            TouchPoint { id: -1, pos: CompactPos { x: 0, y: 0 } },
+            TouchPoint {
+                id: 0,
+                pos: CompactPos::from_f32(0.25, 0.75),
+            },
+            TouchPoint {
+                id: -1,
+                pos: CompactPos { x: 0, y: 0 },
+            },
         ],
     };
     let judges = vec![
-        JudgeEvent { time: 1.0, line_id: 2, note_id: 3, judgement: Judgement::Perfect },
-        JudgeEvent { time: 2.5, line_id: -1, note_id: 99, judgement: Judgement::HoldGood },
+        JudgeEvent {
+            time: 1.0,
+            line_id: 2,
+            note_id: 3,
+            judgement: Judgement::Perfect,
+        },
+        JudgeEvent {
+            time: 2.5,
+            line_id: -1,
+            note_id: 99,
+            judgement: Judgement::HoldGood,
+        },
     ];
     sb_roundtrip(&ServerBoundPacket::Ping);
-    sb_roundtrip(&ServerBoundPacket::Authenticate { token: "tok".into(), trailer: None });
-    sb_roundtrip(&ServerBoundPacket::Authenticate { token: "tok".into(), trailer: trailer.clone() });
-    sb_roundtrip(&ServerBoundPacket::Chat { message: "hi".into(), trailer: None });
-    sb_roundtrip(&ServerBoundPacket::Chat { message: "hi".into(), trailer: trailer.clone() });
-    sb_roundtrip(&ServerBoundPacket::Touches { frames: vec![], trailer: None });
-    sb_roundtrip(&ServerBoundPacket::Touches { frames: vec![tframe.clone()], trailer: None });
-    sb_roundtrip(&ServerBoundPacket::Touches { frames: vec![tframe.clone()], trailer: trailer.clone() });
-    sb_roundtrip(&ServerBoundPacket::Judges { judges: vec![], trailer: None });
-    sb_roundtrip(&ServerBoundPacket::Judges { judges: judges.clone(), trailer: None });
-    sb_roundtrip(&ServerBoundPacket::Judges { judges, trailer: trailer.clone() });
-    sb_roundtrip(&ServerBoundPacket::CreateRoom { room_id: "R".into(), trailer: None });
-    sb_roundtrip(&ServerBoundPacket::CreateRoom { room_id: "R".into(), trailer: trailer.clone() });
-    sb_roundtrip(&ServerBoundPacket::JoinRoom { room_id: "R".into(), monitor: true, trailer: None });
-    sb_roundtrip(&ServerBoundPacket::JoinRoom { room_id: "R".into(), monitor: false, trailer: trailer.clone() });
+    sb_roundtrip(&ServerBoundPacket::Authenticate {
+        token: "tok".into(),
+        trailer: None,
+    });
+    sb_roundtrip(&ServerBoundPacket::Authenticate {
+        token: "tok".into(),
+        trailer: trailer.clone(),
+    });
+    sb_roundtrip(&ServerBoundPacket::Chat {
+        message: "hi".into(),
+        trailer: None,
+    });
+    sb_roundtrip(&ServerBoundPacket::Chat {
+        message: "hi".into(),
+        trailer: trailer.clone(),
+    });
+    sb_roundtrip(&ServerBoundPacket::Touches {
+        frames: vec![],
+        trailer: None,
+    });
+    sb_roundtrip(&ServerBoundPacket::Touches {
+        frames: vec![tframe.clone()],
+        trailer: None,
+    });
+    sb_roundtrip(&ServerBoundPacket::Touches {
+        frames: vec![tframe.clone()],
+        trailer: trailer.clone(),
+    });
+    sb_roundtrip(&ServerBoundPacket::Judges {
+        judges: vec![],
+        trailer: None,
+    });
+    sb_roundtrip(&ServerBoundPacket::Judges {
+        judges: judges.clone(),
+        trailer: None,
+    });
+    sb_roundtrip(&ServerBoundPacket::Judges {
+        judges,
+        trailer: trailer.clone(),
+    });
+    sb_roundtrip(&ServerBoundPacket::CreateRoom {
+        room_id: "R".into(),
+        trailer: None,
+    });
+    sb_roundtrip(&ServerBoundPacket::CreateRoom {
+        room_id: "R".into(),
+        trailer: trailer.clone(),
+    });
+    sb_roundtrip(&ServerBoundPacket::JoinRoom {
+        room_id: "R".into(),
+        monitor: true,
+        trailer: None,
+    });
+    sb_roundtrip(&ServerBoundPacket::JoinRoom {
+        room_id: "R".into(),
+        monitor: false,
+        trailer: trailer.clone(),
+    });
     sb_roundtrip(&ServerBoundPacket::LeaveRoom { trailer: None });
-    sb_roundtrip(&ServerBoundPacket::LeaveRoom { trailer: trailer.clone() });
-    sb_roundtrip(&ServerBoundPacket::LockRoom { lock: true, trailer: None });
-    sb_roundtrip(&ServerBoundPacket::CycleRoom { cycle: false, trailer: trailer.clone() });
-    sb_roundtrip(&ServerBoundPacket::SelectChart { id: 42, trailer: None });
-    sb_roundtrip(&ServerBoundPacket::SelectChart { id: -1, trailer: trailer.clone() });
+    sb_roundtrip(&ServerBoundPacket::LeaveRoom {
+        trailer: trailer.clone(),
+    });
+    sb_roundtrip(&ServerBoundPacket::LockRoom {
+        lock: true,
+        trailer: None,
+    });
+    sb_roundtrip(&ServerBoundPacket::CycleRoom {
+        cycle: false,
+        trailer: trailer.clone(),
+    });
+    sb_roundtrip(&ServerBoundPacket::SelectChart {
+        id: 42,
+        trailer: None,
+    });
+    sb_roundtrip(&ServerBoundPacket::SelectChart {
+        id: -1,
+        trailer: trailer.clone(),
+    });
     sb_roundtrip(&ServerBoundPacket::RequestStart { trailer: None });
-    sb_roundtrip(&ServerBoundPacket::Ready { trailer: trailer.clone() });
+    sb_roundtrip(&ServerBoundPacket::Ready {
+        trailer: trailer.clone(),
+    });
     sb_roundtrip(&ServerBoundPacket::CancelReady { trailer: None });
-    sb_roundtrip(&ServerBoundPacket::Played { record_id: 1001, trailer: None });
-    sb_roundtrip(&ServerBoundPacket::Played { record_id: i32::MIN, trailer: trailer.clone() });
+    sb_roundtrip(&ServerBoundPacket::Played {
+        record_id: 1001,
+        trailer: None,
+    });
+    sb_roundtrip(&ServerBoundPacket::Played {
+        record_id: i32::MIN,
+        trailer: trailer.clone(),
+    });
     sb_roundtrip(&ServerBoundPacket::Abort { trailer: None });
-    sb_roundtrip(&ServerBoundPacket::Abort { trailer: trailer.clone() });
+    sb_roundtrip(&ServerBoundPacket::Abort {
+        trailer: trailer.clone(),
+    });
 }
 
 #[test]
@@ -567,7 +733,10 @@ fn serverbound_unknown_id() {
 fn serverbound_oversized_fields_rejected() {
     use phira_mp::bytes::Encode as _;
     // token > 32
-    let pkt = ServerBoundPacket::Authenticate { token: "x".repeat(33), trailer: None };
+    let pkt = ServerBoundPacket::Authenticate {
+        token: "x".repeat(33),
+        trailer: None,
+    };
     let mut body = BytesMut::new();
     pkt.encode(&mut body);
     assert!(matches!(
@@ -575,7 +744,10 @@ fn serverbound_oversized_fields_rejected() {
         CodecError::BadStringLength(33)
     ));
     // room_id > 20
-    let pkt = ServerBoundPacket::CreateRoom { room_id: "y".repeat(21), trailer: None };
+    let pkt = ServerBoundPacket::CreateRoom {
+        room_id: "y".repeat(21),
+        trailer: None,
+    };
     let mut body = BytesMut::new();
     pkt.encode(&mut body);
     assert!(matches!(
@@ -583,7 +755,10 @@ fn serverbound_oversized_fields_rejected() {
         CodecError::BadStringLength(21)
     ));
     // chat > 200
-    let pkt = ServerBoundPacket::Chat { message: "z".repeat(201), trailer: None };
+    let pkt = ServerBoundPacket::Chat {
+        message: "z".repeat(201),
+        trailer: None,
+    };
     let mut body = BytesMut::new();
     pkt.encode(&mut body);
     assert!(matches!(
@@ -621,17 +796,29 @@ fn cb_roundtrip(p: &ClientBoundPacket) {
     let frame = encode_packet(p);
     let mut dec = FrameDecoder::new();
     dec.feed(&frame);
-    let payload = dec.next_frame().unwrap().unwrap_or_else(|| {
-        panic!("no frame produced for {p:?}")
-    });
+    let payload = dec
+        .next_frame()
+        .unwrap()
+        .unwrap_or_else(|| panic!("no frame produced for {p:?}"));
     let dec = ClientBoundPacket::decode_frame(&payload).unwrap_or_else(|e| {
-        panic!("roundtrip failed for {p:?}: {e:?} (frame={:02x?})", &frame[..frame.len().min(64)])
+        panic!(
+            "roundtrip failed for {p:?}: {e:?} (frame={:02x?})",
+            &frame[..frame.len().min(64)]
+        )
     });
-    assert_eq!(format!("{p:?}"), format!("{dec:?}"), "clientbound roundtrip");
+    assert_eq!(
+        format!("{p:?}"),
+        format!("{dec:?}"),
+        "clientbound roundtrip"
+    );
 }
 
 fn sample_user(id: i32) -> FullUserProfile {
-    FullUserProfile { user_id: id, user_name: format!("U{id}"), monitor: id % 2 == 0 }
+    FullUserProfile {
+        user_id: id,
+        user_name: format!("U{id}"),
+        monitor: id % 2 == 0,
+    }
 }
 
 fn sample_room_info() -> RoomInfo {
@@ -652,9 +839,17 @@ fn clientbound_all_packets_roundtrip() {
     let trailer = Some(Bytes::from_static(&[0x01, 0x02, 0x03]));
     let tframe = TouchFrame {
         time: 1.5,
-        points: vec![TouchPoint { id: 3, pos: CompactPos::from_f32(0.1, 0.9) }],
+        points: vec![TouchPoint {
+            id: 3,
+            pos: CompactPos::from_f32(0.1, 0.9),
+        }],
     };
-    let judges = vec![JudgeEvent { time: 2.0, line_id: 0, note_id: 5, judgement: Judgement::Miss }];
+    let judges = vec![JudgeEvent {
+        time: 2.0,
+        line_id: 0,
+        note_id: 5,
+        judgement: Judgement::Miss,
+    }];
     let auth_ok = AuthenticateData {
         user_profile: sample_user(1),
         room_info: Some(sample_room_info()),
@@ -666,38 +861,131 @@ fn clientbound_all_packets_roundtrip() {
     };
 
     cb_roundtrip(&ClientBoundPacket::Pong);
-    cb_roundtrip(&ClientBoundPacket::Authenticate { result: PacketResult::Success(auth_ok), trailer: None });
+    cb_roundtrip(&ClientBoundPacket::Authenticate {
+        result: PacketResult::Success(auth_ok),
+        trailer: None,
+    });
     cb_roundtrip(&ClientBoundPacket::Authenticate {
         result: PacketResult::Failed("denied".into()),
         trailer: trailer.clone(),
     });
-    cb_roundtrip(&ClientBoundPacket::Chat { result: PacketResult::ok(), trailer: None });
-    cb_roundtrip(&ClientBoundPacket::Chat { result: PacketResult::failed("err"), trailer: trailer.clone() });
-    cb_roundtrip(&ClientBoundPacket::Touches { from_player_id: 9, frames: vec![], trailer: None });
-    cb_roundtrip(&ClientBoundPacket::Touches { from_player_id: 9, frames: vec![tframe.clone()], trailer: trailer.clone() });
-    cb_roundtrip(&ClientBoundPacket::Judges { from_player_id: 9, judges: vec![], trailer: None });
-    cb_roundtrip(&ClientBoundPacket::Judges { from_player_id: 9, judges: judges.clone(), trailer: trailer.clone() });
-    cb_roundtrip(&ClientBoundPacket::Message { message: Message::StartPlaying, trailer: None });
-    cb_roundtrip(&ClientBoundPacket::Message { message: Message::Played { user: 1, score: 1, accuracy: 1.0, full_combo: true }, trailer: trailer.clone() });
-    cb_roundtrip(&ClientBoundPacket::ChangeState { game_state: GameState::Playing, trailer: None });
-    cb_roundtrip(&ClientBoundPacket::ChangeState { game_state: GameState::SelectChart { chart_id: Some(-1) }, trailer: trailer.clone() });
-    cb_roundtrip(&ClientBoundPacket::ChangeHost { is_host: true, trailer: None });
-    cb_roundtrip(&ClientBoundPacket::ChangeHost { is_host: false, trailer: trailer.clone() });
-    cb_roundtrip(&ClientBoundPacket::CreateRoom { result: PacketResult::ok(), trailer: None });
-    cb_roundtrip(&ClientBoundPacket::JoinRoom { result: PacketResult::Success(join_ok), trailer: None });
-    cb_roundtrip(&ClientBoundPacket::JoinRoom { result: PacketResult::failed("full"), trailer: trailer.clone() });
-    cb_roundtrip(&ClientBoundPacket::OnJoinRoom { user_profile: sample_user(4), trailer: None });
-    cb_roundtrip(&ClientBoundPacket::OnJoinRoom { user_profile: sample_user(5), trailer: trailer.clone() });
-    cb_roundtrip(&ClientBoundPacket::LeaveRoom { result: PacketResult::ok(), trailer: None });
-    cb_roundtrip(&ClientBoundPacket::LockRoom { result: PacketResult::ok(), trailer: trailer.clone() });
-    cb_roundtrip(&ClientBoundPacket::CycleRoom { result: PacketResult::failed("no"), trailer: None });
-    cb_roundtrip(&ClientBoundPacket::SelectChart { result: PacketResult::ok(), trailer: trailer.clone() });
-    cb_roundtrip(&ClientBoundPacket::RequestStart { result: PacketResult::failed("x"), trailer: None });
-    cb_roundtrip(&ClientBoundPacket::Ready { result: PacketResult::ok(), trailer: trailer.clone() });
-    cb_roundtrip(&ClientBoundPacket::CancelReady { result: PacketResult::ok(), trailer: None });
-    cb_roundtrip(&ClientBoundPacket::Played { result: PacketResult::ok(), trailer: trailer.clone() });
-    cb_roundtrip(&ClientBoundPacket::Abort { result: PacketResult::ok(), trailer: None });
-    cb_roundtrip(&ClientBoundPacket::Abort { result: PacketResult::failed("no"), trailer: trailer.clone() });
+    cb_roundtrip(&ClientBoundPacket::Chat {
+        result: PacketResult::ok(),
+        trailer: None,
+    });
+    cb_roundtrip(&ClientBoundPacket::Chat {
+        result: PacketResult::failed("err"),
+        trailer: trailer.clone(),
+    });
+    cb_roundtrip(&ClientBoundPacket::Touches {
+        from_player_id: 9,
+        frames: vec![],
+        trailer: None,
+    });
+    cb_roundtrip(&ClientBoundPacket::Touches {
+        from_player_id: 9,
+        frames: vec![tframe.clone()],
+        trailer: trailer.clone(),
+    });
+    cb_roundtrip(&ClientBoundPacket::Judges {
+        from_player_id: 9,
+        judges: vec![],
+        trailer: None,
+    });
+    cb_roundtrip(&ClientBoundPacket::Judges {
+        from_player_id: 9,
+        judges: judges.clone(),
+        trailer: trailer.clone(),
+    });
+    cb_roundtrip(&ClientBoundPacket::Message {
+        message: Message::StartPlaying,
+        trailer: None,
+    });
+    cb_roundtrip(&ClientBoundPacket::Message {
+        message: Message::Played {
+            user: 1,
+            score: 1,
+            accuracy: 1.0,
+            full_combo: true,
+        },
+        trailer: trailer.clone(),
+    });
+    cb_roundtrip(&ClientBoundPacket::ChangeState {
+        game_state: GameState::Playing,
+        trailer: None,
+    });
+    cb_roundtrip(&ClientBoundPacket::ChangeState {
+        game_state: GameState::SelectChart { chart_id: Some(-1) },
+        trailer: trailer.clone(),
+    });
+    cb_roundtrip(&ClientBoundPacket::ChangeHost {
+        is_host: true,
+        trailer: None,
+    });
+    cb_roundtrip(&ClientBoundPacket::ChangeHost {
+        is_host: false,
+        trailer: trailer.clone(),
+    });
+    cb_roundtrip(&ClientBoundPacket::CreateRoom {
+        result: PacketResult::ok(),
+        trailer: None,
+    });
+    cb_roundtrip(&ClientBoundPacket::JoinRoom {
+        result: PacketResult::Success(join_ok),
+        trailer: None,
+    });
+    cb_roundtrip(&ClientBoundPacket::JoinRoom {
+        result: PacketResult::failed("full"),
+        trailer: trailer.clone(),
+    });
+    cb_roundtrip(&ClientBoundPacket::OnJoinRoom {
+        user_profile: sample_user(4),
+        trailer: None,
+    });
+    cb_roundtrip(&ClientBoundPacket::OnJoinRoom {
+        user_profile: sample_user(5),
+        trailer: trailer.clone(),
+    });
+    cb_roundtrip(&ClientBoundPacket::LeaveRoom {
+        result: PacketResult::ok(),
+        trailer: None,
+    });
+    cb_roundtrip(&ClientBoundPacket::LockRoom {
+        result: PacketResult::ok(),
+        trailer: trailer.clone(),
+    });
+    cb_roundtrip(&ClientBoundPacket::CycleRoom {
+        result: PacketResult::failed("no"),
+        trailer: None,
+    });
+    cb_roundtrip(&ClientBoundPacket::SelectChart {
+        result: PacketResult::ok(),
+        trailer: trailer.clone(),
+    });
+    cb_roundtrip(&ClientBoundPacket::RequestStart {
+        result: PacketResult::failed("x"),
+        trailer: None,
+    });
+    cb_roundtrip(&ClientBoundPacket::Ready {
+        result: PacketResult::ok(),
+        trailer: trailer.clone(),
+    });
+    cb_roundtrip(&ClientBoundPacket::CancelReady {
+        result: PacketResult::ok(),
+        trailer: None,
+    });
+    cb_roundtrip(&ClientBoundPacket::Played {
+        result: PacketResult::ok(),
+        trailer: trailer.clone(),
+    });
+    cb_roundtrip(&ClientBoundPacket::Abort {
+        result: PacketResult::ok(),
+        trailer: None,
+    });
+    cb_roundtrip(&ClientBoundPacket::Abort {
+        result: PacketResult::failed("no"),
+        trailer: trailer.clone(),
+    });
 }
 
 #[test]
@@ -719,24 +1007,80 @@ fn clientbound_ids_stable() {
             }),
             trailer: None,
         },
-        ClientBoundPacket::Chat { result: PacketResult::ok(), trailer: None },
-        ClientBoundPacket::Touches { from_player_id: 0, frames: vec![], trailer: None },
-        ClientBoundPacket::Judges { from_player_id: 0, judges: vec![], trailer: None },
-        ClientBoundPacket::Message { message: Message::StartPlaying, trailer: None },
-        ClientBoundPacket::ChangeState { game_state: GameState::Playing, trailer: None },
-        ClientBoundPacket::ChangeHost { is_host: false, trailer: None },
-        ClientBoundPacket::CreateRoom { result: PacketResult::ok(), trailer: None },
-        ClientBoundPacket::JoinRoom { result: PacketResult::failed(""), trailer: None },
-        ClientBoundPacket::OnJoinRoom { user_profile: sample_user(0), trailer: None },
-        ClientBoundPacket::LeaveRoom { result: PacketResult::ok(), trailer: None },
-        ClientBoundPacket::LockRoom { result: PacketResult::ok(), trailer: None },
-        ClientBoundPacket::CycleRoom { result: PacketResult::ok(), trailer: None },
-        ClientBoundPacket::SelectChart { result: PacketResult::ok(), trailer: None },
-        ClientBoundPacket::RequestStart { result: PacketResult::ok(), trailer: None },
-        ClientBoundPacket::Ready { result: PacketResult::ok(), trailer: None },
-        ClientBoundPacket::CancelReady { result: PacketResult::ok(), trailer: None },
-        ClientBoundPacket::Played { result: PacketResult::ok(), trailer: None },
-        ClientBoundPacket::Abort { result: PacketResult::ok(), trailer: None },
+        ClientBoundPacket::Chat {
+            result: PacketResult::ok(),
+            trailer: None,
+        },
+        ClientBoundPacket::Touches {
+            from_player_id: 0,
+            frames: vec![],
+            trailer: None,
+        },
+        ClientBoundPacket::Judges {
+            from_player_id: 0,
+            judges: vec![],
+            trailer: None,
+        },
+        ClientBoundPacket::Message {
+            message: Message::StartPlaying,
+            trailer: None,
+        },
+        ClientBoundPacket::ChangeState {
+            game_state: GameState::Playing,
+            trailer: None,
+        },
+        ClientBoundPacket::ChangeHost {
+            is_host: false,
+            trailer: None,
+        },
+        ClientBoundPacket::CreateRoom {
+            result: PacketResult::ok(),
+            trailer: None,
+        },
+        ClientBoundPacket::JoinRoom {
+            result: PacketResult::failed(""),
+            trailer: None,
+        },
+        ClientBoundPacket::OnJoinRoom {
+            user_profile: sample_user(0),
+            trailer: None,
+        },
+        ClientBoundPacket::LeaveRoom {
+            result: PacketResult::ok(),
+            trailer: None,
+        },
+        ClientBoundPacket::LockRoom {
+            result: PacketResult::ok(),
+            trailer: None,
+        },
+        ClientBoundPacket::CycleRoom {
+            result: PacketResult::ok(),
+            trailer: None,
+        },
+        ClientBoundPacket::SelectChart {
+            result: PacketResult::ok(),
+            trailer: None,
+        },
+        ClientBoundPacket::RequestStart {
+            result: PacketResult::ok(),
+            trailer: None,
+        },
+        ClientBoundPacket::Ready {
+            result: PacketResult::ok(),
+            trailer: None,
+        },
+        ClientBoundPacket::CancelReady {
+            result: PacketResult::ok(),
+            trailer: None,
+        },
+        ClientBoundPacket::Played {
+            result: PacketResult::ok(),
+            trailer: None,
+        },
+        ClientBoundPacket::Abort {
+            result: PacketResult::ok(),
+            trailer: None,
+        },
     ];
     for (i, p) in ids.iter().enumerate() {
         assert_eq!(p.id(), i as u8, "clientbound id {i}");
@@ -747,11 +1091,22 @@ fn clientbound_ids_stable() {
 
 #[test]
 fn compact_pos_f32_roundtrip() {
-    for (x, y) in [(0.0, 0.0), (0.5, 0.5), (-1.0, 1.0), (1.0, -1.0), (0.123, 0.987)] {
+    for (x, y) in [
+        (0.0, 0.0),
+        (0.5, 0.5),
+        (-1.0, 1.0),
+        (1.0, -1.0),
+        (0.123, 0.987),
+    ] {
         let p = CompactPos::from_f32(x, y);
         let dx = (p.x_f32() - x).abs();
         let dy = (p.y_f32() - y).abs();
-        assert!(dx < 0.001 && dy < 0.001, "({x},{y}) -> ({}, {})", p.x_f32(), p.y_f32());
+        assert!(
+            dx < 0.001 && dy < 0.001,
+            "({x},{y}) -> ({}, {})",
+            p.x_f32(),
+            p.y_f32()
+        );
     }
 }
 
@@ -772,19 +1127,32 @@ fn compact_pos_encode_decode() {
 fn judgement_id_mapping() {
     assert_eq!(Judgement::from_id(0).unwrap(), Judgement::Perfect);
     assert_eq!(Judgement::from_id(5).unwrap(), Judgement::HoldGood);
-    assert!(matches!(Judgement::from_id(6).unwrap_err(), CodecError::UnknownId(_, 6)));
-    assert!(matches!(Judgement::from_id(0xFF).unwrap_err(), CodecError::UnknownId(_, 0xFF)));
+    assert!(matches!(
+        Judgement::from_id(6).unwrap_err(),
+        CodecError::UnknownId(_, 6)
+    ));
+    assert!(matches!(
+        Judgement::from_id(0xFF).unwrap_err(),
+        CodecError::UnknownId(_, 0xFF)
+    ));
 }
 
 #[test]
 fn user_profile_and_full_roundtrip() {
-    let u = UserProfile { user_id: -5, user_name: "中文名".into() };
+    let u = UserProfile {
+        user_id: -5,
+        user_name: "中文名".into(),
+    };
     let mut buf = BytesMut::new();
     phira_mp::bytes::Encode::encode(&u, &mut buf);
     let mut r: &[u8] = &buf;
     assert_eq!(UserProfile::decode(&mut r).unwrap(), u);
 
-    let f = FullUserProfile { user_id: 5, user_name: "M".into(), monitor: true };
+    let f = FullUserProfile {
+        user_id: 5,
+        user_name: "M".into(),
+        monitor: true,
+    };
     let mut buf = BytesMut::new();
     phira_mp::bytes::Encode::encode(&f, &mut buf);
     let mut r: &[u8] = &buf;
@@ -810,8 +1178,17 @@ fn touch_frame_and_judge_event_roundtrip() {
     let tf = TouchFrame {
         time: -1.5,
         points: vec![
-            TouchPoint { id: 0, pos: CompactPos::from_f32(1.0, 1.0) },
-            TouchPoint { id: 127, pos: CompactPos { x: 0xFFFF, y: 0x0000 } },
+            TouchPoint {
+                id: 0,
+                pos: CompactPos::from_f32(1.0, 1.0),
+            },
+            TouchPoint {
+                id: 127,
+                pos: CompactPos {
+                    x: 0xFFFF,
+                    y: 0x0000,
+                },
+            },
         ],
     };
     let mut buf = BytesMut::new();
@@ -819,7 +1196,12 @@ fn touch_frame_and_judge_event_roundtrip() {
     let mut r: &[u8] = &buf;
     assert_eq!(TouchFrame::decode(&mut r).unwrap(), tf);
 
-    let je = JudgeEvent { time: 3.25, line_id: 7, note_id: -8, judgement: Judgement::Bad };
+    let je = JudgeEvent {
+        time: 3.25,
+        line_id: 7,
+        note_id: -8,
+        judgement: Judgement::Bad,
+    };
     let mut buf = BytesMut::new();
     phira_mp::bytes::Encode::encode(&je, &mut buf);
     let mut r: &[u8] = &buf;
@@ -846,7 +1228,10 @@ fn zero_copy_shared_frame_identity() {
     use phira_mp::packet::clientbound::encode_shared;
     let a = encode_shared(&ClientBoundPacket::Pong);
     let b = encode_shared(&ClientBoundPacket::Pong);
-    let c = encode_shared(&ClientBoundPacket::Chat { result: PacketResult::ok(), trailer: None });
+    let c = encode_shared(&ClientBoundPacket::Chat {
+        result: PacketResult::ok(),
+        trailer: None,
+    });
     assert_eq!(a.as_ref().as_ref(), b.as_ref().as_ref());
     assert_ne!(a.as_ref().as_ref(), c.as_ref().as_ref());
 }

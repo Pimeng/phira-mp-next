@@ -14,7 +14,7 @@ use phira_mp::packet::clientbound::{ClientBoundPacket, SharedFrame};
 use phira_mp::packet::serverbound::ServerBoundPacket;
 use phira_mp::phira::UserInfo;
 use phira_mp::player::Player;
-use phira_mp::server::{run, ServerArgs};
+use phira_mp::server::{ServerArgs, run};
 use serde_json::json;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -233,33 +233,49 @@ pub fn mock_response(path: &str, token: Option<&str>) -> (&'static str, String) 
             .and_then(|t| t.strip_prefix("test-token-"))
             .and_then(|s| s.parse().ok())
             .unwrap_or(1);
-        return ("200 OK", json!({
-            "id": id, "name": format!("Tester{id}"), "language": "zh-CN",
-            "rks": 15.0, "banned": false, "loginBanned": false
-        }).to_string());
+        return (
+            "200 OK",
+            json!({
+                "id": id, "name": format!("Tester{id}"), "language": "zh-CN",
+                "rks": 15.0, "banned": false, "loginBanned": false
+            })
+            .to_string(),
+        );
     }
     if let Some(rest) = seg.strip_prefix("user/") {
         let id: i32 = rest.parse().unwrap_or(0);
-        return ("200 OK", json!({
-            "id": id, "name": format!("User{id}"), "language": "zh-CN",
-            "rks": 14.0, "banned": false, "loginBanned": false
-        }).to_string());
+        return (
+            "200 OK",
+            json!({
+                "id": id, "name": format!("User{id}"), "language": "zh-CN",
+                "rks": 14.0, "banned": false, "loginBanned": false
+            })
+            .to_string(),
+        );
     }
     if let Some(rest) = seg.strip_prefix("chart/") {
         let id: i32 = rest.parse().unwrap_or(0);
-        return ("200 OK", json!({
-            "id": id, "name": format!("Chart{id}"), "level": "AT",
-            "difficulty": 16.4, "charter": "charter", "composer": "composer",
-            "ranked": true, "uploader": 1
-        }).to_string());
+        return (
+            "200 OK",
+            json!({
+                "id": id, "name": format!("Chart{id}"), "level": "AT",
+                "difficulty": 16.4, "charter": "charter", "composer": "composer",
+                "ranked": true, "uploader": 1
+            })
+            .to_string(),
+        );
     }
     if let Some(rest) = seg.strip_prefix("record/") {
         let id: i32 = rest.parse().unwrap_or(0);
-        return ("200 OK", json!({
-            "id": id, "player": 1, "chart": 42, "score": 998765, "accuracy": 99.87,
-            "perfect": 900, "good": 5, "bad": 1, "miss": 0,
-            "fullCombo": true, "maxCombo": 906, "speed": 1.0
-        }).to_string());
+        return (
+            "200 OK",
+            json!({
+                "id": id, "player": 1, "chart": 42, "score": 998765, "accuracy": 99.87,
+                "perfect": 900, "good": 5, "bad": 1, "miss": 0,
+                "fullCombo": true, "maxCombo": 906, "speed": 1.0
+            })
+            .to_string(),
+        );
     }
     ("404 Not Found", "{}".to_string())
 }
@@ -286,7 +302,10 @@ impl TestClient {
             stream.write_all(prefix).await.unwrap();
         }
         stream.write_all(&[0x01]).await.unwrap(); // 握手
-        TestClient { stream, rbuf: Vec::new() }
+        TestClient {
+            stream,
+            rbuf: Vec::new(),
+        }
     }
 
     /// 发送已编码的完整帧字节。
@@ -331,7 +350,10 @@ impl TestClient {
     }
 
     #[allow(dead_code)]
-    pub async fn recv_until(&mut self, pred: impl Fn(&ClientBoundPacket) -> bool) -> ClientBoundPacket {
+    pub async fn recv_until(
+        &mut self,
+        pred: impl Fn(&ClientBoundPacket) -> bool,
+    ) -> ClientBoundPacket {
         for _ in 0..50 {
             let p = self.recv().await;
             if pred(&p) {
@@ -344,17 +366,24 @@ impl TestClient {
     #[allow(dead_code)]
     pub async fn expect_pong(&mut self) {
         let p = self.recv().await;
-        assert!(matches!(p, ClientBoundPacket::Pong), "expected Pong, got id={}", p.id());
+        assert!(
+            matches!(p, ClientBoundPacket::Pong),
+            "expected Pong, got id={}",
+            p.id()
+        );
     }
 
     /// 期望连接被对端关闭（读到 EOF 或 RST）。
     #[allow(dead_code)]
     pub async fn expect_closed(&mut self) {
         let mut tmp = [0u8; 64];
-        let n = tokio::time::timeout(std::time::Duration::from_secs(6), self.stream.read(&mut tmp))
-            .await
-            .expect("close timeout")
-            .unwrap_or(1);
+        let n = tokio::time::timeout(
+            std::time::Duration::from_secs(6),
+            self.stream.read(&mut tmp),
+        )
+        .await
+        .expect("close timeout")
+        .unwrap_or(1);
         assert_eq!(n, 0, "expected connection closed");
     }
 }
@@ -405,14 +434,23 @@ pub async fn authenticate(
 ) -> phira_mp::packet::clientbound::AuthenticateData {
     use phira_mp::packet::PacketResult;
     client
-        .send(&ServerBoundPacket::Authenticate { token: auth_token(n), trailer: None })
+        .send(&ServerBoundPacket::Authenticate {
+            token: auth_token(n),
+            trailer: None,
+        })
         .await;
     let p = client
         .recv_until(|p| matches!(p, ClientBoundPacket::Authenticate { .. }))
         .await;
     match p {
-        ClientBoundPacket::Authenticate { result: PacketResult::Success(data), .. } => data,
-        ClientBoundPacket::Authenticate { result: PacketResult::Failed(msg), .. } => {
+        ClientBoundPacket::Authenticate {
+            result: PacketResult::Success(data),
+            ..
+        } => data,
+        ClientBoundPacket::Authenticate {
+            result: PacketResult::Failed(msg),
+            ..
+        } => {
             panic!("auth failed: {msg}")
         }
         _ => unreachable!(),

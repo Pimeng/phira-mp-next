@@ -11,8 +11,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, Weak};
 
 /// 异步事件处理器。
-pub type EventHandler =
-    Arc<dyn Fn(Arc<dyn Any + Send + Sync>) -> futures::future::BoxFuture<'static, ()> + Send + Sync>;
+pub type EventHandler = Arc<
+    dyn Fn(Arc<dyn Any + Send + Sync>) -> futures::future::BoxFuture<'static, ()> + Send + Sync,
+>;
 
 struct Entry {
     id: u64,
@@ -40,9 +41,10 @@ pub struct Subscription {
 impl Drop for Subscription {
     fn drop(&mut self) {
         if let Some(reg) = self.reg.upgrade()
-            && let Some(list) = reg.handlers.write().unwrap().get_mut(self.key) {
-                list.retain(|e| e.id != self.id);
-            }
+            && let Some(list) = reg.handlers.write().unwrap().get_mut(self.key)
+        {
+            list.retain(|e| e.id != self.id);
+        }
     }
 }
 
@@ -98,7 +100,12 @@ impl EventBus {
         self.register(key, std::any::type_name::<T>(), handler)
     }
 
-    fn register(&self, key: &'static str, expect: &'static str, handler: EventHandler) -> Subscription {
+    fn register(
+        &self,
+        key: &'static str,
+        expect: &'static str,
+        handler: EventHandler,
+    ) -> Subscription {
         let id = NEXT_SUB_ID.fetch_add(1, Ordering::Relaxed);
         self.reg
             .handlers
@@ -106,7 +113,11 @@ impl EventBus {
             .unwrap()
             .entry(key)
             .or_default()
-            .push(Entry { id, expect, handler });
+            .push(Entry {
+                id,
+                expect,
+                handler,
+            });
         Subscription {
             key,
             id,
@@ -195,13 +206,17 @@ mod tests {
         let _s1 = bus.subscribe("ev", move |v: &i32| {
             let l = l1.clone();
             let v = *v;
-            async move { l.lock().unwrap().push(("a", v)); }
+            async move {
+                l.lock().unwrap().push(("a", v));
+            }
         });
         let l2 = log.clone();
         let _s2 = bus.subscribe("ev", move |v: &i32| {
             let l = l2.clone();
             let v = *v;
-            async move { l.lock().unwrap().push(("b", v)); }
+            async move {
+                l.lock().unwrap().push(("b", v));
+            }
         });
         bus.post("ev", 42).await;
         assert_eq!(*log.lock().unwrap(), vec![("a", 42), ("b", 42)]);
@@ -226,8 +241,12 @@ mod tests {
             cancel_reason: Option<String>,
         }
         impl TestCancellable {
-            fn is_cancelled(&self) -> bool { self.cancel_reason.is_some() }
-            fn cancel(&mut self, r: impl Into<String>) { self.cancel_reason = Some(r.into()); }
+            fn is_cancelled(&self) -> bool {
+                self.cancel_reason.is_some()
+            }
+            fn cancel(&mut self, r: impl Into<String>) {
+                self.cancel_reason = Some(r.into());
+            }
         }
         let bus = EventBus::new();
         let _s = bus.subscribe_mut("ev", |ev: &mut TestCancellable| {
@@ -236,7 +255,13 @@ mod tests {
             async {}
         });
         let out = bus
-            .post_mut("ev", TestCancellable { message: "orig".to_string(), cancel_reason: None })
+            .post_mut(
+                "ev",
+                TestCancellable {
+                    message: "orig".to_string(),
+                    cancel_reason: None,
+                },
+            )
             .await;
         assert!(out.is_cancelled());
         assert_eq!(out.cancel_reason.as_deref(), Some("spam"));
@@ -250,13 +275,19 @@ mod tests {
         let c = count.clone();
         let sub = bus.subscribe("ev", move |_: &i32| {
             let c = c.clone();
-            async move { c.fetch_add(1, AOrd::SeqCst); }
+            async move {
+                c.fetch_add(1, AOrd::SeqCst);
+            }
         });
         bus.post("ev", 1).await;
         assert_eq!(count.load(AOrd::SeqCst), 1);
         drop(sub);
         bus.post("ev", 1).await;
-        assert_eq!(count.load(AOrd::SeqCst), 1, "dropped subscription should not fire");
+        assert_eq!(
+            count.load(AOrd::SeqCst),
+            1,
+            "dropped subscription should not fire"
+        );
     }
 
     #[tokio::test]
@@ -267,10 +298,16 @@ mod tests {
         let c = count.clone();
         let _s2 = bus.subscribe("ev", move |_: &i32| {
             let c = c.clone();
-            async move { c.fetch_add(1, AOrd::SeqCst); }
+            async move {
+                c.fetch_add(1, AOrd::SeqCst);
+            }
         });
         bus.post("ev", 1).await; // 不应 panic 传播
-        assert_eq!(count.load(AOrd::SeqCst), 1, "later handler should still run");
+        assert_eq!(
+            count.load(AOrd::SeqCst),
+            1,
+            "later handler should still run"
+        );
     }
 
     #[tokio::test]

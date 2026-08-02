@@ -81,7 +81,10 @@ pub type PlayerResolver = Arc<
         ) -> futures::future::BoxFuture<
             'static,
             Result<
-                (crate::player::ResolveResult, Option<crate::network::connection::ConnectionHandle>),
+                (
+                    crate::player::ResolveResult,
+                    Option<crate::network::connection::ConnectionHandle>,
+                ),
                 String,
             >,
         > + Send
@@ -236,9 +239,12 @@ pub async fn run(args: ServerArgs) -> std::io::Result<()> {
         crate::http::start(ctx.clone(), ctx.args.host.clone(), ctx.args.http_port).await?;
     }
     ctx.events
-        .post(crate::events::SERVER_LIFECYCLE, crate::events::ServerLifecycleEvent {
-            phase: crate::events::LifecyclePhase::Started,
-        })
+        .post(
+            crate::events::SERVER_LIFECYCLE,
+            crate::events::ServerLifecycleEvent {
+                phase: crate::events::LifecyclePhase::Started,
+            },
+        )
         .await;
     log_info!(
         &ctx.i18n,
@@ -285,9 +291,12 @@ pub async fn run(args: ServerArgs) -> std::io::Result<()> {
     // Shutting down... → Kicking {n} player(s)... → Closing {m} channel(s)...
     // → Channels closed. → Uptime → Shutdown completed in {ms}ms. Goodbye!
     ctx.events
-        .post(crate::events::SERVER_LIFECYCLE, crate::events::ServerLifecycleEvent {
-            phase: crate::events::LifecyclePhase::Stopping,
-        })
+        .post(
+            crate::events::SERVER_LIFECYCLE,
+            crate::events::ServerLifecycleEvent {
+                phase: crate::events::LifecyclePhase::Stopping,
+            },
+        )
         .await;
     let shutdown_start = Instant::now();
     log_info!(&ctx.i18n, None, "LOG_SHUTTING_DOWN");
@@ -295,7 +304,12 @@ pub async fn run(args: ServerArgs) -> std::io::Result<()> {
     // 对应 Java allChannels：server channel + 活跃连接
     let channel_count = ctx.active_connections.load(Ordering::SeqCst) + 1;
     if kick_count > 0 {
-        log_info!(&ctx.i18n, None, "LOG_KICKING_PLAYERS", ("count", kick_count));
+        log_info!(
+            &ctx.i18n,
+            None,
+            "LOG_KICKING_PLAYERS",
+            ("count", kick_count)
+        );
     }
     if channel_count > 0 {
         log_info!(
@@ -337,9 +351,12 @@ pub async fn run(args: ServerArgs) -> std::io::Result<()> {
         ("ms", shutdown_start.elapsed().as_millis()),
     );
     ctx.events
-        .post(crate::events::SERVER_LIFECYCLE, crate::events::ServerLifecycleEvent {
-            phase: crate::events::LifecyclePhase::Stopped,
-        })
+        .post(
+            crate::events::SERVER_LIFECYCLE,
+            crate::events::ServerLifecycleEvent {
+                phase: crate::events::LifecyclePhase::Stopped,
+            },
+        )
         .await;
     ctx.stopped.notify_waiters();
     Ok(())

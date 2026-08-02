@@ -5,7 +5,7 @@
 //! `maybe_build_record` 触发条件。
 
 use phira_mp::packet::data::{CompactPos, JudgeEvent, Judgement, TouchFrame, TouchPoint};
-use phira_mp::record::{maybe_build_record, CompressionType, PhiraRecord, FORMAT_VERSION, MAGIC};
+use phira_mp::record::{CompressionType, FORMAT_VERSION, MAGIC, PhiraRecord, maybe_build_record};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -13,11 +13,7 @@ static DIR_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 fn temp_dir() -> PathBuf {
     let n = DIR_COUNTER.fetch_add(1, Ordering::SeqCst);
-    std::env::temp_dir().join(format!(
-        "phira-rec-test-{}-{}",
-        std::process::id(),
-        n
-    ))
+    std::env::temp_dir().join(format!("phira-rec-test-{}-{}", std::process::id(), n))
 }
 
 fn sample_record() -> PhiraRecord {
@@ -32,15 +28,34 @@ fn sample_record() -> PhiraRecord {
             TouchFrame {
                 time: 1.0,
                 points: vec![
-                    TouchPoint { id: 0, pos: CompactPos::from_f32(0.25, 0.75) },
-                    TouchPoint { id: 1, pos: CompactPos::from_f32(0.5, 0.5) },
+                    TouchPoint {
+                        id: 0,
+                        pos: CompactPos::from_f32(0.25, 0.75),
+                    },
+                    TouchPoint {
+                        id: 1,
+                        pos: CompactPos::from_f32(0.5, 0.5),
+                    },
                 ],
             },
-            TouchFrame { time: 2.5, points: vec![] },
+            TouchFrame {
+                time: 2.5,
+                points: vec![],
+            },
         ],
         judge_events: vec![
-            JudgeEvent { time: 1.1, line_id: 0, note_id: 3, judgement: Judgement::Perfect },
-            JudgeEvent { time: 1.2, line_id: 1, note_id: 9, judgement: Judgement::HoldGood },
+            JudgeEvent {
+                time: 1.1,
+                line_id: 0,
+                note_id: 3,
+                judgement: Judgement::Perfect,
+            },
+            JudgeEvent {
+                time: 1.2,
+                line_id: 1,
+                note_id: 9,
+                judgement: Judgement::HoldGood,
+            },
         ],
     }
 }
@@ -65,7 +80,11 @@ fn write_read_roundtrip_zstd() {
     assert_eq!(loaded, rec);
     // 压缩后文件应小于原始载荷（文本数据高度可压缩）
     let compressed = std::fs::read(&path).unwrap();
-    assert!(compressed.len() < 300, "zstd 压缩应显著减小体积: {}", compressed.len());
+    assert!(
+        compressed.len() < 300,
+        "zstd 压缩应显著减小体积: {}",
+        compressed.len()
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -87,8 +106,15 @@ fn roundtrip_empty_lists() {
 #[test]
 fn parse_file_too_short() {
     assert!(PhiraRecord::parse(&[]).is_err());
-    assert!(PhiraRecord::parse(&[0; 12]).is_err(), "12 字节 < 13 字节头部");
-    assert!(PhiraRecord::parse(&[0; 12]).unwrap_err().contains("too short"));
+    assert!(
+        PhiraRecord::parse(&[0; 12]).is_err(),
+        "12 字节 < 13 字节头部"
+    );
+    assert!(
+        PhiraRecord::parse(&[0; 12])
+            .unwrap_err()
+            .contains("too short")
+    );
 }
 
 #[test]
@@ -150,15 +176,7 @@ fn read_missing_file() {
 
 #[test]
 fn maybe_build_record_empty_data_is_none() {
-    let r = maybe_build_record(
-        1,
-        2,
-        "U",
-        Some(42),
-        Some("C".into()),
-        vec![],
-        vec![],
-    );
+    let r = maybe_build_record(1, 2, "U", Some(42), Some("C".into()), vec![], vec![]);
     assert!(r.is_none());
 }
 
@@ -170,7 +188,10 @@ fn maybe_build_record_with_touches() {
         "U",
         Some(42),
         Some("C".into()),
-        vec![TouchFrame { time: 1.0, points: vec![] }],
+        vec![TouchFrame {
+            time: 1.0,
+            points: vec![],
+        }],
         vec![],
     )
     .unwrap();
@@ -191,7 +212,12 @@ fn maybe_build_record_with_judges_only() {
         None,
         None,
         vec![],
-        vec![JudgeEvent { time: 1.0, line_id: 0, note_id: 1, judgement: Judgement::Perfect }],
+        vec![JudgeEvent {
+            time: 1.0,
+            line_id: 0,
+            note_id: 1,
+            judgement: Judgement::Perfect,
+        }],
     )
     .unwrap();
     assert_eq!(rec.chart_id, 0, "chart_id None → 0");

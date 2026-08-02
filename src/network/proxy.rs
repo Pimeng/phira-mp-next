@@ -31,7 +31,10 @@ async fn parse_inner(stream: &mut TcpStream) -> std::io::Result<ProxyResult> {
     let mut head = [0u8; 16];
     let n = stream.read(&mut head).await?;
     if n == 0 {
-        return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "eof"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "eof",
+        ));
     }
 
     if head.starts_with(V2_SIG) {
@@ -46,7 +49,11 @@ async fn parse_inner(stream: &mut TcpStream) -> std::io::Result<ProxyResult> {
     }
 }
 
-async fn parse_v1(stream: &mut TcpStream, head: [u8; 16], n: usize) -> std::io::Result<ProxyResult> {
+async fn parse_v1(
+    stream: &mut TcpStream,
+    head: [u8; 16],
+    n: usize,
+) -> std::io::Result<ProxyResult> {
     // v1: "PROXY TCP4 src dst sport dport\r\n"
     let mut line = head[..n].to_vec();
     while !line.windows(2).any(|w| w == b"\r\n") {
@@ -54,7 +61,10 @@ async fn parse_v1(stream: &mut TcpStream, head: [u8; 16], n: usize) -> std::io::
         stream.read_exact(&mut b).await?;
         line.push(b[0]);
         if line.len() > 108 {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "proxy v1 line too long"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "proxy v1 line too long",
+            ));
         }
     }
     let crlf = line.windows(2).position(|w| w == b"\r\n").unwrap();
@@ -70,7 +80,11 @@ async fn parse_v1(stream: &mut TcpStream, head: [u8; 16], n: usize) -> std::io::
     Ok(ProxyResult { real_addr, pending })
 }
 
-async fn parse_v2(stream: &mut TcpStream, head: [u8; 16], n: usize) -> std::io::Result<ProxyResult> {
+async fn parse_v2(
+    stream: &mut TcpStream,
+    head: [u8; 16],
+    n: usize,
+) -> std::io::Result<ProxyResult> {
     // v2: sig(12) ver/cmd(1) fam/proto(1) len(2) [addr...]
     let mut hdr = [0u8; 4];
     hdr.copy_from_slice(&head[12..16]);
@@ -83,7 +97,10 @@ async fn parse_v2(stream: &mut TcpStream, head: [u8; 16], n: usize) -> std::io::
         let mut b = vec![0u8; len - extra.len()];
         let m = stream.read(&mut b).await?;
         if m == 0 {
-            return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "eof"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "eof",
+            ));
         }
         extra.extend_from_slice(&b[..m]);
     }

@@ -17,10 +17,10 @@ pub mod state;
 
 pub use local::LocalRoom;
 
+use crate::packet::PacketResult;
 use crate::packet::clientbound::{JoinRoomData, SharedFrame};
 use crate::packet::data::RoomInfo;
 use crate::packet::state::GameState;
-use crate::packet::PacketResult;
 use crate::player::Player;
 use std::sync::{Arc, Weak};
 
@@ -73,7 +73,10 @@ pub enum JoinOutcome {
 
 /// played 校验结果（避免 None 二义性）。
 pub enum PlayedCheck {
-    CanPlay { chart_id: Option<i32>, chart_name: Option<String> },
+    CanPlay {
+        chart_id: Option<i32>,
+        chart_name: Option<String>,
+    },
     AlreadyDone,
 }
 
@@ -233,9 +236,8 @@ pub async fn send_frame_to(player: &Arc<dyn crate::player::Player>, frame: &Shar
 
 /// 房间工厂（对应 Java 自定义 Room 实现经 `resolveRoom` 注入）。
 /// 第三参数为「销毁自清理」回调（注册表移除）。
-pub type RoomFactory = Arc<
-    dyn Fn(String, RoomSetting, Box<dyn Fn() + Send + Sync>) -> Arc<dyn Room> + Send + Sync,
->;
+pub type RoomFactory =
+    Arc<dyn Fn(String, RoomSetting, Box<dyn Fn() + Send + Sync>) -> Arc<dyn Room> + Send + Sync>;
 
 /// 房间注册表（7.3 节；弱引用 + on_destroy 自清理）。
 pub struct RoomRegistry {
@@ -277,9 +279,10 @@ impl RoomRegistry {
     ) -> GameResult<Arc<dyn Room>> {
         let mut map = self.rooms.lock().unwrap();
         if let Some(existing) = map.get(room_id).and_then(|w| w.upgrade())
-            && !existing.is_destroyed() {
-                return Err(GameError("ERROR_ROOM_ALREADY_EXISTS"));
-            }
+            && !existing.is_destroyed()
+        {
+            return Err(GameError("ERROR_ROOM_ALREADY_EXISTS"));
+        }
         let rid = room_id.to_string();
         let on_destroy: Box<dyn Fn() + Send + Sync> = {
             let rid = rid.clone();

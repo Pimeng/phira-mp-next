@@ -77,5 +77,4 @@ impl HandlerContext {
 
 /// 初始 handler 工厂（对应 Java 接管 `setPacketHandler` 的能力）：
 /// 返回连接的第一个 handler（默认 `AuthenticateHandler`）。
-pub type InitialHandlerFactory =
-    Arc<dyn Fn() -> Box<dyn PacketHandler> + Send + Sync>;
+pub type InitialHandlerFactory = Arc<dyn Fn() -> Box<dyn PacketHandler> + Send + Sync>;

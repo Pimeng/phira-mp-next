@@ -9,13 +9,13 @@
 //!
 //! 输入/回显走 [`terminal_console`]（对标 TCA 交互式终端 + 日志不打断输入行）。
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use terminal_console::{self as console, ConsoleHandler};
 
 use crate::i18n::I18nService;
 use crate::log::{log_info, log_raw, log_warn, render_message};
-use crate::packet::clientbound::{encode_shared, ClientBoundPacket};
+use crate::packet::clientbound::{ClientBoundPacket, encode_shared};
 use crate::packet::message::Message;
 use crate::server::ServerContext;
 
@@ -26,7 +26,10 @@ fn line(i18n: &I18nService, key: &str, args: &[(&str, &str)]) -> String {
 
 /// 启动控制台命令线程（独立线程，不占用 tokio worker）。
 pub fn start_command_thread(ctx: Arc<crate::server::ServerContext>) {
-    let handler = CommandConsole { running: AtomicBool::new(true), ctx };
+    let handler = CommandConsole {
+        running: AtomicBool::new(true),
+        ctx,
+    };
     std::thread::spawn(move || console::Console::builder().build().run(handler));
 }
 
@@ -100,7 +103,11 @@ fn parse_bool(s: &str) -> Option<bool> {
 fn cmd_online(ctx: &Arc<ServerContext>) {
     let i18n = &ctx.i18n;
     let players = ctx.players.online_players();
-    let mut out = line(i18n, "LOG_CMD_ONLINE_TITLE", &[("count", &players.len().to_string())]);
+    let mut out = line(
+        i18n,
+        "LOG_CMD_ONLINE_TITLE",
+        &[("count", &players.len().to_string())],
+    );
     for p in players {
         out.push_str(&line(
             i18n,
@@ -114,7 +121,11 @@ fn cmd_online(ctx: &Arc<ServerContext>) {
 fn cmd_rooms(ctx: &Arc<ServerContext>) {
     let i18n = &ctx.i18n;
     let rooms = ctx.rooms.all_rooms();
-    let mut out = line(i18n, "LOG_CMD_ROOMS_TITLE", &[("count", &rooms.len().to_string())]);
+    let mut out = line(
+        i18n,
+        "LOG_CMD_ROOMS_TITLE",
+        &[("count", &rooms.len().to_string())],
+    );
     for r in rooms {
         let snap = r.snapshot();
         out.push_str(&line(
@@ -178,7 +189,12 @@ fn cmd_ban(ctx: &Arc<ServerContext>, args: &[&str]) {
             let conn = lp.connection();
             futures::executor::block_on(conn.close());
         }
-        log_info!(i18n, "LOG_CMD_BANNED_NAMED", ("id", user_id), ("name", name));
+        log_info!(
+            i18n,
+            "LOG_CMD_BANNED_NAMED",
+            ("id", user_id),
+            ("name", name)
+        );
     } else {
         log_info!(i18n, "LOG_CMD_BANNED", ("id", user_id));
     }
@@ -208,7 +224,11 @@ fn cmd_banlist(ctx: &Arc<ServerContext>, args: &[&str]) {
         log_info!(i18n, "LOG_CMD_NO_BANNED");
         return;
     }
-    let mut out = line(i18n, "LOG_CMD_BANLIST_TITLE", &[("count", &list.len().to_string())]);
+    let mut out = line(
+        i18n,
+        "LOG_CMD_BANLIST_TITLE",
+        &[("count", &list.len().to_string())],
+    );
     for (id, reason) in list {
         match reason {
             Some(r) => out.push_str(&line(
@@ -241,10 +261,20 @@ fn cmd_banroom(ctx: &Arc<ServerContext>, args: &[&str]) {
         if room.contains_member(user_id) {
             let (_l, plan, _d) = room.leave(user_id);
             futures::executor::block_on(crate::room::send_broadcasts(plan));
-            log_info!(i18n, "LOG_CMD_REMOVED_FROM_ROOM", ("id", user_id), ("room", room_id));
+            log_info!(
+                i18n,
+                "LOG_CMD_REMOVED_FROM_ROOM",
+                ("id", user_id),
+                ("room", room_id)
+            );
         }
     }
-    log_info!(i18n, "LOG_CMD_BANNED_FROM_ROOM", ("id", user_id), ("room", room_id));
+    log_info!(
+        i18n,
+        "LOG_CMD_BANNED_FROM_ROOM",
+        ("id", user_id),
+        ("room", room_id)
+    );
 }
 
 fn cmd_unbanroom(ctx: &Arc<ServerContext>, args: &[&str]) {
@@ -257,9 +287,19 @@ fn cmd_unbanroom(ctx: &Arc<ServerContext>, args: &[&str]) {
         return;
     };
     if ctx.bans.unban_room(room_id, user_id) {
-        log_info!(i18n, "LOG_CMD_UNBANNED_FROM_ROOM", ("id", user_id), ("room", room_id));
+        log_info!(
+            i18n,
+            "LOG_CMD_UNBANNED_FROM_ROOM",
+            ("id", user_id),
+            ("room", room_id)
+        );
     } else {
-        log_warn!(i18n, "LOG_CMD_NOT_BANNED_FROM_ROOM", ("id", user_id), ("room", room_id));
+        log_warn!(
+            i18n,
+            "LOG_CMD_NOT_BANNED_FROM_ROOM",
+            ("id", user_id),
+            ("room", room_id)
+        );
     }
 }
 
@@ -337,7 +377,12 @@ fn cmd_maxusers(ctx: &Arc<ServerContext>, args: &[&str]) {
         return;
     };
     match room.admin_set_max_player(count) {
-        Ok(()) => log_info!(i18n, "LOG_CMD_MAXUSERS_SET", ("room", room_id), ("count", count)),
+        Ok(()) => log_info!(
+            i18n,
+            "LOG_CMD_MAXUSERS_SET",
+            ("room", room_id),
+            ("count", count)
+        ),
         Err(e) => log_warn!(i18n, "LOG_CMD_FAILED", ("err", e.0)),
     }
 }
@@ -362,7 +407,12 @@ fn cmd_nexthost(ctx: &Arc<ServerContext>, args: &[&str]) {
             if !room.setting().cycle {
                 log_warn!(i18n, "LOG_CMD_NEXTHOST_NOT_CYCLE", ("room", room_id));
             }
-            log_info!(i18n, "LOG_CMD_NEXTHOST_SET", ("room", room_id), ("id", user_id));
+            log_info!(
+                i18n,
+                "LOG_CMD_NEXTHOST_SET",
+                ("room", room_id),
+                ("id", user_id)
+            );
         }
         Err(e) => log_warn!(i18n, "LOG_CMD_FAILED", ("err", e.0)),
     }
@@ -410,7 +460,12 @@ fn cmd_cycle(ctx: &Arc<ServerContext>, args: &[&str]) {
     match room.admin_set_cycle(cycle) {
         Ok(plan) => {
             futures::executor::block_on(crate::room::send_broadcasts(plan));
-            log_info!(i18n, "LOG_CMD_CYCLE_SET", ("room", room_id), ("value", cycle));
+            log_info!(
+                i18n,
+                "LOG_CMD_CYCLE_SET",
+                ("room", room_id),
+                ("value", cycle)
+            );
         }
         Err(e) => log_warn!(i18n, "LOG_CMD_FAILED", ("err", e.0)),
     }
@@ -434,7 +489,12 @@ fn cmd_sethost(ctx: &Arc<ServerContext>, args: &[&str]) {
     match room.admin_transfer_host(user_id) {
         Ok(plan) => {
             futures::executor::block_on(crate::room::send_broadcasts(plan));
-            log_info!(i18n, "LOG_CMD_HOST_TRANSFERRED", ("room", room_id), ("id", user_id));
+            log_info!(
+                i18n,
+                "LOG_CMD_HOST_TRANSFERRED",
+                ("room", room_id),
+                ("id", user_id)
+            );
         }
         Err(e) => log_warn!(i18n, "LOG_CMD_FAILED", ("err", e.0)),
     }
@@ -538,7 +598,11 @@ impl ConsoleHandler for CommandConsole {
         }
 
         // stop：直接处理（需置 running=false，对应 Java 的 stop 特判）
-        let name = cmd.split_whitespace().next().unwrap_or("").to_ascii_lowercase();
+        let name = cmd
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase();
         if name == "stop" {
             self.running.store(false, Ordering::SeqCst);
             self.ctx.request_shutdown();
@@ -600,10 +664,17 @@ mod tests {
         ctx: &Arc<ServerContext>,
         id: i32,
         name: &str,
-    ) -> (Arc<dyn crate::player::Player>, mpsc::UnboundedReceiver<WriterMsg>) {
+    ) -> (
+        Arc<dyn crate::player::Player>,
+        mpsc::UnboundedReceiver<WriterMsg>,
+    ) {
         let (tx, rx) = mpsc::unbounded_channel::<WriterMsg>();
         let conn = ConnectionHandle::new_for_test(tx);
-        let info = Arc::new(UserInfo { id, name: name.into(), ..Default::default() });
+        let info = Arc::new(UserInfo {
+            id,
+            name: name.into(),
+            ..Default::default()
+        });
         let (res, _old) = ctx
             .players
             .resolve_player(
@@ -617,7 +688,9 @@ mod tests {
     }
 
     /// 剥掉 VarInt 帧头后解码 ClientBoundPacket。
-    fn decode_frame_payload(frame: &crate::packet::clientbound::SharedFrame) -> Option<ClientBoundPacket> {
+    fn decode_frame_payload(
+        frame: &crate::packet::clientbound::SharedFrame,
+    ) -> Option<ClientBoundPacket> {
         let bytes = frame.as_ref().as_ref();
         let mut i = 0;
         for _ in 0..5 {

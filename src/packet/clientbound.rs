@@ -7,7 +7,7 @@ use crate::bytes::{self, CodecError, Decode, Encode};
 use crate::packet::data::{FullUserProfile, JudgeEvent, RoomInfo, TouchFrame};
 use crate::packet::message::Message;
 use crate::packet::state::GameState;
-use crate::packet::{encode_void_result, DecodeSized, PacketResult};
+use crate::packet::{DecodeSized, PacketResult, encode_void_result};
 use ::bytes::{Buf, Bytes, BytesMut};
 use std::sync::Arc;
 
@@ -72,7 +72,10 @@ impl DecodeSized for AuthenticateData {
         } else {
             None
         };
-        Ok(AuthenticateData { user_profile, room_info })
+        Ok(AuthenticateData {
+            user_profile,
+            room_info,
+        })
     }
 }
 
@@ -104,7 +107,11 @@ impl DecodeSized for JoinRoomData {
             users.push(crate::bytes::Decode::decode(buf)?);
         }
         let live = bytes::read_bool(buf)?;
-        Ok(JoinRoomData { game_state, users, live })
+        Ok(JoinRoomData {
+            game_state,
+            users,
+            live,
+        })
     }
 }
 
@@ -119,43 +126,102 @@ pub enum ClientBoundPacket {
     /// 0x00（单例）
     Pong,
     /// 0x01
-    Authenticate { result: PacketResult<AuthenticateData>, trailer: Option<Bytes> },
+    Authenticate {
+        result: PacketResult<AuthenticateData>,
+        trailer: Option<Bytes>,
+    },
     /// 0x02
-    Chat { result: PacketResult<()>, trailer: Option<Bytes> },
+    Chat {
+        result: PacketResult<()>,
+        trailer: Option<Bytes>,
+    },
     /// 0x03
-    Touches { from_player_id: i32, frames: Vec<TouchFrame>, trailer: Option<Bytes> },
+    Touches {
+        from_player_id: i32,
+        frames: Vec<TouchFrame>,
+        trailer: Option<Bytes>,
+    },
     /// 0x04
-    Judges { from_player_id: i32, judges: Vec<JudgeEvent>, trailer: Option<Bytes> },
+    Judges {
+        from_player_id: i32,
+        judges: Vec<JudgeEvent>,
+        trailer: Option<Bytes>,
+    },
     /// 0x05
-    Message { message: Message, trailer: Option<Bytes> },
+    Message {
+        message: Message,
+        trailer: Option<Bytes>,
+    },
     /// 0x06
-    ChangeState { game_state: GameState, trailer: Option<Bytes> },
+    ChangeState {
+        game_state: GameState,
+        trailer: Option<Bytes>,
+    },
     /// 0x07
-    ChangeHost { is_host: bool, trailer: Option<Bytes> },
+    ChangeHost {
+        is_host: bool,
+        trailer: Option<Bytes>,
+    },
     /// 0x08
-    CreateRoom { result: PacketResult<()>, trailer: Option<Bytes> },
+    CreateRoom {
+        result: PacketResult<()>,
+        trailer: Option<Bytes>,
+    },
     /// 0x09
-    JoinRoom { result: PacketResult<JoinRoomData>, trailer: Option<Bytes> },
+    JoinRoom {
+        result: PacketResult<JoinRoomData>,
+        trailer: Option<Bytes>,
+    },
     /// 0x0A
-    OnJoinRoom { user_profile: FullUserProfile, trailer: Option<Bytes> },
+    OnJoinRoom {
+        user_profile: FullUserProfile,
+        trailer: Option<Bytes>,
+    },
     /// 0x0B
-    LeaveRoom { result: PacketResult<()>, trailer: Option<Bytes> },
+    LeaveRoom {
+        result: PacketResult<()>,
+        trailer: Option<Bytes>,
+    },
     /// 0x0C
-    LockRoom { result: PacketResult<()>, trailer: Option<Bytes> },
+    LockRoom {
+        result: PacketResult<()>,
+        trailer: Option<Bytes>,
+    },
     /// 0x0D
-    CycleRoom { result: PacketResult<()>, trailer: Option<Bytes> },
+    CycleRoom {
+        result: PacketResult<()>,
+        trailer: Option<Bytes>,
+    },
     /// 0x0E
-    SelectChart { result: PacketResult<()>, trailer: Option<Bytes> },
+    SelectChart {
+        result: PacketResult<()>,
+        trailer: Option<Bytes>,
+    },
     /// 0x0F
-    RequestStart { result: PacketResult<()>, trailer: Option<Bytes> },
+    RequestStart {
+        result: PacketResult<()>,
+        trailer: Option<Bytes>,
+    },
     /// 0x10
-    Ready { result: PacketResult<()>, trailer: Option<Bytes> },
+    Ready {
+        result: PacketResult<()>,
+        trailer: Option<Bytes>,
+    },
     /// 0x11
-    CancelReady { result: PacketResult<()>, trailer: Option<Bytes> },
+    CancelReady {
+        result: PacketResult<()>,
+        trailer: Option<Bytes>,
+    },
     /// 0x12
-    Played { result: PacketResult<()>, trailer: Option<Bytes> },
+    Played {
+        result: PacketResult<()>,
+        trailer: Option<Bytes>,
+    },
     /// 0x13
-    Abort { result: PacketResult<()>, trailer: Option<Bytes> },
+    Abort {
+        result: PacketResult<()>,
+        trailer: Option<Bytes>,
+    },
 }
 
 impl ClientBoundPacket {
@@ -181,7 +247,11 @@ impl ClientBoundPacket {
                 for _ in 0..count {
                     frames.push(Decode::decode(&mut buf)?);
                 }
-                ClientBoundPacket::Touches { from_player_id, frames, trailer: tr(&mut buf) }
+                ClientBoundPacket::Touches {
+                    from_player_id,
+                    frames,
+                    trailer: tr(&mut buf),
+                }
             }
             0x04 => {
                 let from_player_id = bytes::read_i32(&mut buf)?;
@@ -190,7 +260,11 @@ impl ClientBoundPacket {
                 for _ in 0..count {
                     judges.push(Decode::decode(&mut buf)?);
                 }
-                ClientBoundPacket::Judges { from_player_id, judges, trailer: tr(&mut buf) }
+                ClientBoundPacket::Judges {
+                    from_player_id,
+                    judges,
+                    trailer: tr(&mut buf),
+                }
             }
             0x05 => ClientBoundPacket::Message {
                 message: Decode::decode(&mut buf)?,
@@ -288,67 +362,115 @@ impl ClientBoundPacket {
     }
 
     pub fn message(msg: Message) -> Self {
-        ClientBoundPacket::Message { message: msg, trailer: None }
+        ClientBoundPacket::Message {
+            message: msg,
+            trailer: None,
+        }
     }
 
     pub fn change_state(game_state: GameState) -> Self {
-        ClientBoundPacket::ChangeState { game_state, trailer: None }
+        ClientBoundPacket::ChangeState {
+            game_state,
+            trailer: None,
+        }
     }
 
     pub fn change_host(is_host: bool) -> Self {
-        ClientBoundPacket::ChangeHost { is_host, trailer: None }
+        ClientBoundPacket::ChangeHost {
+            is_host,
+            trailer: None,
+        }
     }
 
     pub fn on_join_room(user_profile: FullUserProfile) -> Self {
-        ClientBoundPacket::OnJoinRoom { user_profile, trailer: None }
+        ClientBoundPacket::OnJoinRoom {
+            user_profile,
+            trailer: None,
+        }
     }
 
     pub fn chat_result(result: PacketResult<()>) -> Self {
-        ClientBoundPacket::Chat { result, trailer: None }
+        ClientBoundPacket::Chat {
+            result,
+            trailer: None,
+        }
     }
 
     pub fn create_room_result(result: PacketResult<()>) -> Self {
-        ClientBoundPacket::CreateRoom { result, trailer: None }
+        ClientBoundPacket::CreateRoom {
+            result,
+            trailer: None,
+        }
     }
 
     pub fn join_room_result(result: PacketResult<JoinRoomData>) -> Self {
-        ClientBoundPacket::JoinRoom { result, trailer: None }
+        ClientBoundPacket::JoinRoom {
+            result,
+            trailer: None,
+        }
     }
 
     pub fn leave_room_result(result: PacketResult<()>) -> Self {
-        ClientBoundPacket::LeaveRoom { result, trailer: None }
+        ClientBoundPacket::LeaveRoom {
+            result,
+            trailer: None,
+        }
     }
 
     pub fn lock_room_result(result: PacketResult<()>) -> Self {
-        ClientBoundPacket::LockRoom { result, trailer: None }
+        ClientBoundPacket::LockRoom {
+            result,
+            trailer: None,
+        }
     }
 
     pub fn cycle_room_result(result: PacketResult<()>) -> Self {
-        ClientBoundPacket::CycleRoom { result, trailer: None }
+        ClientBoundPacket::CycleRoom {
+            result,
+            trailer: None,
+        }
     }
 
     pub fn select_chart_result(result: PacketResult<()>) -> Self {
-        ClientBoundPacket::SelectChart { result, trailer: None }
+        ClientBoundPacket::SelectChart {
+            result,
+            trailer: None,
+        }
     }
 
     pub fn request_start_result(result: PacketResult<()>) -> Self {
-        ClientBoundPacket::RequestStart { result, trailer: None }
+        ClientBoundPacket::RequestStart {
+            result,
+            trailer: None,
+        }
     }
 
     pub fn ready_result(result: PacketResult<()>) -> Self {
-        ClientBoundPacket::Ready { result, trailer: None }
+        ClientBoundPacket::Ready {
+            result,
+            trailer: None,
+        }
     }
 
     pub fn cancel_ready_result(result: PacketResult<()>) -> Self {
-        ClientBoundPacket::CancelReady { result, trailer: None }
+        ClientBoundPacket::CancelReady {
+            result,
+            trailer: None,
+        }
     }
 
     pub fn played_result(result: PacketResult<()>) -> Self {
-        ClientBoundPacket::Played { result, trailer: None }
+        ClientBoundPacket::Played {
+            result,
+            trailer: None,
+        }
     }
 
     pub fn abort_result(result: PacketResult<()>) -> Self {
-        ClientBoundPacket::Abort { result, trailer: None }
+        ClientBoundPacket::Abort {
+            result,
+            trailer: None,
+        }
     }
 }
 
@@ -371,11 +493,19 @@ fn encode_body(packet: &ClientBoundPacket, buf: &mut BytesMut) {
         | ClientBoundPacket::CancelReady { result, .. }
         | ClientBoundPacket::Played { result, .. }
         | ClientBoundPacket::Abort { result, .. } => encode_void_result(result, buf),
-        ClientBoundPacket::Touches { from_player_id, frames, .. } => {
+        ClientBoundPacket::Touches {
+            from_player_id,
+            frames,
+            ..
+        } => {
             bytes::write_i32(buf, *from_player_id);
             bytes::write_list(buf, frames);
         }
-        ClientBoundPacket::Judges { from_player_id, judges, .. } => {
+        ClientBoundPacket::Judges {
+            from_player_id,
+            judges,
+            ..
+        } => {
             bytes::write_i32(buf, *from_player_id);
             bytes::write_list(buf, judges);
         }
@@ -445,7 +575,11 @@ mod tests {
         // success + profile(1, "A", false) + hasRoomInfo=false
         let p = ClientBoundPacket::Authenticate {
             result: PacketResult::Success(AuthenticateData {
-                user_profile: FullUserProfile { user_id: 1, user_name: "A".into(), monitor: false },
+                user_profile: FullUserProfile {
+                    user_id: 1,
+                    user_name: "A".into(),
+                    monitor: false,
+                },
                 room_info: None,
             }),
             trailer: None,
@@ -508,18 +642,36 @@ mod tests {
     fn roundtrip_message_all_variants() {
         use crate::packet::message::Message;
         let msgs = [
-            Message::Chat { user: 1, content: "hi".into() },
+            Message::Chat {
+                user: 1,
+                content: "hi".into(),
+            },
             Message::CreateRoom { user: 1 },
-            Message::JoinRoom { user: 2, name: "B".into() },
-            Message::LeaveRoom { user: 3, name: "C".into() },
+            Message::JoinRoom {
+                user: 2,
+                name: "B".into(),
+            },
+            Message::LeaveRoom {
+                user: 3,
+                name: "C".into(),
+            },
             Message::LockRoom { lock: true },
             Message::CycleRoom { cycle: false },
-            Message::SelectChart { user: 1, name: "S".into(), id: 42 },
+            Message::SelectChart {
+                user: 1,
+                name: "S".into(),
+                id: 42,
+            },
             Message::GameStart { user: 1 },
             Message::Ready { user: 2 },
             Message::CancelReady { user: 2 },
             Message::CancelGame { user: 2 },
-            Message::Played { user: 1, score: 999, accuracy: 0.99, full_combo: true },
+            Message::Played {
+                user: 1,
+                score: 999,
+                accuracy: 0.99,
+                full_combo: true,
+            },
             Message::Abort { user: 1 },
             Message::GameEnd,
             Message::NewHost { user: 2 },
@@ -559,7 +711,11 @@ mod tests {
                 other => panic!("expected ChangeHost, got {other:?}"),
             }
         }
-        let profile = crate::packet::data::FullUserProfile { user_id: 7, user_name: "X".into(), monitor: true };
+        let profile = crate::packet::data::FullUserProfile {
+            user_id: 7,
+            user_name: "X".into(),
+            monitor: true,
+        };
         match roundtrip(&ClientBoundPacket::on_join_room(profile)) {
             ClientBoundPacket::OnJoinRoom { user_profile, .. } => {
                 assert_eq!(user_profile.user_id, 7);
@@ -575,7 +731,11 @@ mod tests {
         use crate::packet::state::GameState;
         let p = ClientBoundPacket::Authenticate {
             result: PacketResult::Success(AuthenticateData {
-                user_profile: FullUserProfile { user_id: 9, user_name: "Z".into(), monitor: false },
+                user_profile: FullUserProfile {
+                    user_id: 9,
+                    user_name: "Z".into(),
+                    monitor: false,
+                },
                 room_info: Some(RoomInfo {
                     room_id: "R".into(),
                     state: GameState::Playing,
@@ -584,13 +744,20 @@ mod tests {
                     cycle: true,
                     is_host: true,
                     is_ready: false,
-                    users: vec![FullUserProfile { user_id: 9, user_name: "Z".into(), monitor: false }],
+                    users: vec![FullUserProfile {
+                        user_id: 9,
+                        user_name: "Z".into(),
+                        monitor: false,
+                    }],
                 }),
             }),
             trailer: None,
         };
         match roundtrip(&p) {
-            ClientBoundPacket::Authenticate { result: PacketResult::Success(d), .. } => {
+            ClientBoundPacket::Authenticate {
+                result: PacketResult::Success(d),
+                ..
+            } => {
                 assert_eq!(d.user_profile.user_id, 9);
                 let info = d.room_info.expect("room_info should survive");
                 assert_eq!(info.room_id, "R");
@@ -609,14 +776,25 @@ mod tests {
         let data = JoinRoomData {
             game_state: GameState::WaitForReady,
             users: vec![
-                FullUserProfile { user_id: 1, user_name: "A".into(), monitor: false },
-                FullUserProfile { user_id: 2, user_name: "M".into(), monitor: true },
+                FullUserProfile {
+                    user_id: 1,
+                    user_name: "A".into(),
+                    monitor: false,
+                },
+                FullUserProfile {
+                    user_id: 2,
+                    user_name: "M".into(),
+                    monitor: true,
+                },
             ],
             live: true,
         };
         let p = ClientBoundPacket::join_room_result(PacketResult::Success(data));
         match roundtrip(&p) {
-            ClientBoundPacket::JoinRoom { result: PacketResult::Success(d), .. } => {
+            ClientBoundPacket::JoinRoom {
+                result: PacketResult::Success(d),
+                ..
+            } => {
                 assert!(matches!(d.game_state, GameState::WaitForReady));
                 assert_eq!(d.users.len(), 2);
                 assert!(d.users[1].monitor);
@@ -628,14 +806,21 @@ mod tests {
 
     #[test]
     fn roundtrip_touches_judges_forward() {
-        use crate::packet::data::{Judgement, JudgeEvent, TouchFrame};
+        use crate::packet::data::{JudgeEvent, Judgement, TouchFrame};
         let t = ClientBoundPacket::Touches {
             from_player_id: 5,
-            frames: vec![TouchFrame { time: 1.0, points: vec![] }],
+            frames: vec![TouchFrame {
+                time: 1.0,
+                points: vec![],
+            }],
             trailer: None,
         };
         match roundtrip(&t) {
-            ClientBoundPacket::Touches { from_player_id, frames, .. } => {
+            ClientBoundPacket::Touches {
+                from_player_id,
+                frames,
+                ..
+            } => {
                 assert_eq!(from_player_id, 5);
                 assert_eq!(frames.len(), 1);
             }
@@ -643,7 +828,12 @@ mod tests {
         }
         let j = ClientBoundPacket::Judges {
             from_player_id: 6,
-            judges: vec![JudgeEvent { time: 2.0, line_id: 0, note_id: 1, judgement: Judgement::Perfect }],
+            judges: vec![JudgeEvent {
+                time: 2.0,
+                line_id: 0,
+                note_id: 1,
+                judgement: Judgement::Perfect,
+            }],
             trailer: None,
         };
         match roundtrip(&j) {

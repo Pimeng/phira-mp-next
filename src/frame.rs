@@ -6,7 +6,7 @@
 //! 3. `remaining < L` → 等待完整帧。
 //! 4. 产出完整帧。
 
-use crate::bytes::{decode_varint, encode_varint, VarIntError};
+use crate::bytes::{VarIntError, decode_varint, encode_varint};
 use ::bytes::{Bytes, BytesMut};
 
 /// 帧解码错误（导致连接关闭）。
@@ -35,7 +35,9 @@ pub struct FrameDecoder {
 
 impl FrameDecoder {
     pub fn new() -> Self {
-        Self { buf: BytesMut::new() }
+        Self {
+            buf: BytesMut::new(),
+        }
     }
 
     pub fn feed(&mut self, data: &[u8]) {

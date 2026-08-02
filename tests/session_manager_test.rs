@@ -11,8 +11,8 @@ use phira_mp::packet::message::Message;
 use phira_mp::player::Player;
 use phira_mp::room::{LocalRoom, Room, RoomSetting};
 use phira_mp::session::{ResumeFailed, SessionManager};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 fn make_player(id: i32) -> Arc<TestPlayer> {
@@ -43,7 +43,9 @@ async fn suspend_and_resume_roundtrip() {
     let room = make_room();
     room.join(as_dyn(player.clone()), false).unwrap();
 
-    sm.suspend(as_dyn(player.clone()), room.clone(), || {}).await.unwrap();
+    sm.suspend(as_dyn(player.clone()), room.clone(), || {})
+        .await
+        .unwrap();
     assert!(sm.has_suspended(1));
     assert!(room.contains_member(1), "挂起后仍在房间");
 
@@ -69,7 +71,9 @@ async fn resume_after_leave_fails_expired() {
     let room = make_room();
     room.join(as_dyn(player.clone()), false).unwrap();
 
-    sm.suspend(as_dyn(player.clone()), room.clone(), || {}).await.unwrap();
+    sm.suspend(as_dyn(player.clone()), room.clone(), || {})
+        .await
+        .unwrap();
     // 挂起期间玩家离开房间（如被房主踢出）
     room.leave(1);
 
@@ -163,7 +167,10 @@ async fn repeated_suspend_old_timeout_does_not_fire() {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     assert!(new_fired.load(Ordering::SeqCst), "新挂起超时应触发");
-    assert!(!old_fired.load(Ordering::SeqCst), "旧挂起的超时任务不得误杀");
+    assert!(
+        !old_fired.load(Ordering::SeqCst),
+        "旧挂起的超时任务不得误杀"
+    );
     assert!(!sm.has_suspended(1));
 }
 
@@ -187,7 +194,10 @@ async fn resume_before_timeout_suppresses_timeout() {
     let s = sm.resume(&as_dyn(player.clone())).unwrap();
     assert_eq!(s.room.id(), "RS");
     tokio::time::sleep(Duration::from_millis(200)).await;
-    assert!(!removed.load(Ordering::SeqCst), "resume 后超时任务不得触发 remover");
+    assert!(
+        !removed.load(Ordering::SeqCst),
+        "resume 后超时任务不得触发 remover"
+    );
     assert!(room.contains_member(1));
 }
 
@@ -202,9 +212,15 @@ async fn suspend_cleanup_wait_ready_broadcasts_cancel_ready() {
     room.commit_select_chart(1, 42, "C42".into()).unwrap();
     room.require_start(1).unwrap(); // WaitForReady，p1 ready
 
-    sm.suspend(as_dyn(p1.clone()), room.clone(), || {}).await.unwrap();
+    sm.suspend(as_dyn(p1.clone()), room.clone(), || {})
+        .await
+        .unwrap();
     // p2 应收到 CancelReady(1) 广播
-    assert!(p2.messages().iter().any(|m| matches!(m, Message::CancelReady { user: 1 })));
+    assert!(
+        p2.messages()
+            .iter()
+            .any(|m| matches!(m, Message::CancelReady { user: 1 }))
+    );
 }
 
 #[tokio::test]
@@ -219,10 +235,19 @@ async fn suspend_cleanup_playing_broadcasts_abort() {
     room.require_start(1).unwrap();
     room.ready(2).unwrap(); // → Playing
 
-    sm.suspend(as_dyn(p1.clone()), room.clone(), || {}).await.unwrap();
-    assert!(p2.messages().iter().any(|m| matches!(m, Message::Abort { user: 1 })));
+    sm.suspend(as_dyn(p1.clone()), room.clone(), || {})
+        .await
+        .unwrap();
+    assert!(
+        p2.messages()
+            .iter()
+            .any(|m| matches!(m, Message::Abort { user: 1 }))
+    );
     // p2 未完成，对局不结束
-    assert!(matches!(room.game_state_protocol(), phira_mp::packet::state::GameState::Playing));
+    assert!(matches!(
+        room.game_state_protocol(),
+        phira_mp::packet::state::GameState::Playing
+    ));
 }
 
 #[tokio::test]
@@ -236,7 +261,9 @@ async fn monitor_suspend_roundtrip() {
     room.join(as_dyn(p1.clone()), false).unwrap();
     room.join(as_dyn(m.clone()), true).unwrap();
 
-    sm.suspend(as_dyn(m.clone()), room.clone(), || {}).await.unwrap();
+    sm.suspend(as_dyn(m.clone()), room.clone(), || {})
+        .await
+        .unwrap();
     assert!(sm.has_suspended(50));
     let s = sm.resume(&as_dyn(m.clone())).unwrap();
     assert_eq!(s.user_id, 50);

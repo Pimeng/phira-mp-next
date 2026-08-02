@@ -9,7 +9,7 @@
 //!           List<TouchFrame>; List<JudgeEvent>
 
 use crate::bytes::{self, Decode, Encode};
-use crate::packet::data::{JudgeEvent, TouchFrame, MAX_STRING_RECORD};
+use crate::packet::data::{JudgeEvent, MAX_STRING_RECORD, TouchFrame};
 use ::bytes::{Buf, BytesMut};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -56,10 +56,7 @@ impl PhiraRecord {
         let payload = self.encode_payload();
         let (ctype, body): (CompressionType, Vec<u8>) = match compression {
             CompressionType::None => (CompressionType::None, payload.to_vec()),
-            CompressionType::Zstd => (
-                CompressionType::Zstd,
-                zstd::bulk::compress(&payload, 3)?,
-            ),
+            CompressionType::Zstd => (CompressionType::Zstd, zstd::bulk::compress(&payload, 3)?),
         };
 
         let mut out = BytesMut::new();
@@ -84,7 +81,16 @@ impl PhiraRecord {
         let user_name = bytes::read_string(&mut buf, MAX_STRING_RECORD)?;
         let touch_frames = read_list::<TouchFrame>(&mut buf)?;
         let judge_events = read_list::<JudgeEvent>(&mut buf)?;
-        Ok(Self { id, time_ms, chart_id, chart_name, user_id, user_name, touch_frames, judge_events })
+        Ok(Self {
+            id,
+            time_ms,
+            chart_id,
+            chart_name,
+            user_id,
+            user_name,
+            touch_frames,
+            judge_events,
+        })
     }
 
     /// 解析 .phirarec 字节（魔数/版本/压缩校验 + 载荷解码）。
@@ -187,13 +193,29 @@ mod tests {
             touch_frames: vec![
                 TouchFrame {
                     time: 1.0,
-                    points: vec![TouchPoint { id: 0, pos: CompactPos::from_f32(0.5, 0.25) }],
+                    points: vec![TouchPoint {
+                        id: 0,
+                        pos: CompactPos::from_f32(0.5, 0.25),
+                    }],
                 },
-                TouchFrame { time: 2.5, points: vec![] },
+                TouchFrame {
+                    time: 2.5,
+                    points: vec![],
+                },
             ],
             judge_events: vec![
-                JudgeEvent { time: 1.0, line_id: 0, note_id: 1, judgement: Judgement::Perfect },
-                JudgeEvent { time: 2.0, line_id: 3, note_id: -1, judgement: Judgement::HoldGood },
+                JudgeEvent {
+                    time: 1.0,
+                    line_id: 0,
+                    note_id: 1,
+                    judgement: Judgement::Perfect,
+                },
+                JudgeEvent {
+                    time: 2.0,
+                    line_id: 3,
+                    note_id: -1,
+                    judgement: Judgement::HoldGood,
+                },
             ],
         }
     }
@@ -201,7 +223,9 @@ mod tests {
     fn assert_roundtrip(compression: CompressionType) {
         let rec = sample_record();
         let dir = std::env::temp_dir().join(format!(
-            "phira-mp-rec-test-{}-{:?}", std::process::id(), compression
+            "phira-mp-rec-test-{}-{:?}",
+            std::process::id(),
+            compression
         ));
         let path = rec.write_to(&dir, compression).unwrap();
         let parsed = PhiraRecord::read_from(&path).unwrap();
@@ -239,10 +263,20 @@ mod tests {
     #[test]
     fn maybe_build_record_empty_returns_none() {
         assert!(maybe_build_record(1, 1, "u", Some(1), None, vec![], vec![]).is_none());
-        assert!(maybe_build_record(
-            1, 1, "u", Some(1), None,
-            vec![TouchFrame { time: 0.0, points: vec![] }],
-            vec![],
-        ).is_some());
+        assert!(
+            maybe_build_record(
+                1,
+                1,
+                "u",
+                Some(1),
+                None,
+                vec![TouchFrame {
+                    time: 0.0,
+                    points: vec![]
+                }],
+                vec![],
+            )
+            .is_some()
+        );
     }
 }

@@ -3,11 +3,11 @@
 //! 覆盖：建房 → 入房 → 选曲后，接口返回结构符合约定（roomid/cycle/lock/host/
 //! state/chart/players），且以下划线 `_` 开头的房间被过滤。
 
+use phira_mp::packet::PacketResult;
 use phira_mp::packet::clientbound::{ClientBoundPacket, JoinRoomData};
 use phira_mp::packet::serverbound::ServerBoundPacket;
 use phira_mp::packet::state::GameState;
-use phira_mp::packet::PacketResult;
-use phira_mp::server::{run, ServerArgs};
+use phira_mp::server::{ServerArgs, run};
 use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
@@ -69,25 +69,37 @@ fn mock_response(path: &str, token: Option<&str>) -> (&'static str, String) {
             .and_then(|t| t.strip_prefix("test-token-"))
             .and_then(|s| s.parse().ok())
             .unwrap_or(1);
-        return ("200 OK", json!({
-            "id": id, "name": format!("Tester{id}"), "language": "zh-CN",
-            "rks": 15.0, "banned": false, "loginBanned": false
-        }).to_string());
+        return (
+            "200 OK",
+            json!({
+                "id": id, "name": format!("Tester{id}"), "language": "zh-CN",
+                "rks": 15.0, "banned": false, "loginBanned": false
+            })
+            .to_string(),
+        );
     }
     if let Some(rest) = seg.strip_prefix("user/") {
         let id: i32 = rest.parse().unwrap_or(0);
-        return ("200 OK", json!({
-            "id": id, "name": format!("User{id}"), "language": "zh-CN",
-            "rks": 14.0, "banned": false, "loginBanned": false
-        }).to_string());
+        return (
+            "200 OK",
+            json!({
+                "id": id, "name": format!("User{id}"), "language": "zh-CN",
+                "rks": 14.0, "banned": false, "loginBanned": false
+            })
+            .to_string(),
+        );
     }
     if let Some(rest) = seg.strip_prefix("chart/") {
         let id: i32 = rest.parse().unwrap_or(0);
-        return ("200 OK", json!({
-            "id": id, "name": format!("Chart{id}"), "level": "AT",
-            "difficulty": 16.4, "charter": "charter", "composer": "composer",
-            "ranked": true, "uploader": 1
-        }).to_string());
+        return (
+            "200 OK",
+            json!({
+                "id": id, "name": format!("Chart{id}"), "level": "AT",
+                "difficulty": 16.4, "charter": "charter", "composer": "composer",
+                "ranked": true, "uploader": 1
+            })
+            .to_string(),
+        );
     }
     ("404 Not Found", "{}".to_string())
 }
@@ -104,7 +116,10 @@ impl TestClient {
         let mut stream = TcpStream::connect(addr).await.unwrap();
         stream.set_nodelay(true).unwrap();
         stream.write_all(&[0x01]).await.unwrap(); // 握手
-        TestClient { stream, rbuf: Vec::new() }
+        TestClient {
+            stream,
+            rbuf: Vec::new(),
+        }
     }
 
     async fn send(&mut self, packet: &ServerBoundPacket) {
@@ -188,21 +203,32 @@ fn auth_token(n: i32) -> String {
 
 async fn authenticate(client: &mut TestClient, n: i32) {
     client
-        .send(&ServerBoundPacket::Authenticate { token: auth_token(n), trailer: None })
+        .send(&ServerBoundPacket::Authenticate {
+            token: auth_token(n),
+            trailer: None,
+        })
         .await;
     let p = client
         .recv_until(|p| matches!(p, ClientBoundPacket::Authenticate { .. }))
         .await;
     match p {
-        ClientBoundPacket::Authenticate { result: PacketResult::Success(_), .. } => {}
-        ClientBoundPacket::Authenticate { result: PacketResult::Failed(msg), .. } => {
+        ClientBoundPacket::Authenticate {
+            result: PacketResult::Success(_),
+            ..
+        } => {}
+        ClientBoundPacket::Authenticate {
+            result: PacketResult::Failed(msg),
+            ..
+        } => {
             panic!("auth failed: {msg}")
         }
         _ => unreachable!(),
     }
 }
 
-async fn start_server_with_http(phira_addr: &str) -> (Arc<phira_mp::server::ServerContext>, String, u16) {
+async fn start_server_with_http(
+    phira_addr: &str,
+) -> (Arc<phira_mp::server::ServerContext>, String, u16) {
     // 预占一个空闲端口作为 HTTP 端口
     let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let http_port = probe.local_addr().unwrap().port();
@@ -241,7 +267,10 @@ async fn start_server_with_http(phira_addr: &str) -> (Arc<phira_mp::server::Serv
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    assert!(ctx.http_addr.read().unwrap().is_some(), "http did not start");
+    assert!(
+        ctx.http_addr.read().unwrap().is_some(),
+        "http did not start"
+    );
     (ctx, addr, http_port)
 }
 
@@ -269,28 +298,81 @@ async fn http_rooms_list_structure() {
     // 房主建房 room1
     let mut c1 = TestClient::connect(&addr).await;
     authenticate(&mut c1, 1).await;
-    c1.send(&ServerBoundPacket::CreateRoom { room_id: "room1".into(), trailer: None }).await;
-    c1.recv_until(|p| matches!(p, ClientBoundPacket::CreateRoom { result: PacketResult::Success(()), .. })).await;
+    c1.send(&ServerBoundPacket::CreateRoom {
+        room_id: "room1".into(),
+        trailer: None,
+    })
+    .await;
+    c1.recv_until(|p| {
+        matches!(
+            p,
+            ClientBoundPacket::CreateRoom {
+                result: PacketResult::Success(()),
+                ..
+            }
+        )
+    })
+    .await;
 
     // 隐藏房间（_ 开头）不应出现在列表
     let mut c0 = TestClient::connect(&addr).await;
     authenticate(&mut c0, 3).await;
-    c0.send(&ServerBoundPacket::CreateRoom { room_id: "_internal".into(), trailer: None }).await;
-    c0.recv_until(|p| matches!(p, ClientBoundPacket::CreateRoom { result: PacketResult::Success(()), .. })).await;
+    c0.send(&ServerBoundPacket::CreateRoom {
+        room_id: "_internal".into(),
+        trailer: None,
+    })
+    .await;
+    c0.recv_until(|p| {
+        matches!(
+            p,
+            ClientBoundPacket::CreateRoom {
+                result: PacketResult::Success(()),
+                ..
+            }
+        )
+    })
+    .await;
 
     // 玩家2 加入 room1
     let mut c2 = TestClient::connect(&addr).await;
     authenticate(&mut c2, 2).await;
-    c2.send(&ServerBoundPacket::JoinRoom { room_id: "room1".into(), monitor: false, trailer: None }).await;
+    c2.send(&ServerBoundPacket::JoinRoom {
+        room_id: "room1".into(),
+        monitor: false,
+        trailer: None,
+    })
+    .await;
     c2.recv_until(|p| matches!(p,
         ClientBoundPacket::JoinRoom { result: PacketResult::Success(JoinRoomData { users, .. }), .. } if users.len() == 2
     )).await;
     c1.recv_until(|p| matches!(p, ClientBoundPacket::OnJoinRoom { user_profile, .. } if user_profile.user_id == 2)).await;
 
     // 房主选曲 42
-    c1.send(&ServerBoundPacket::SelectChart { id: 42, trailer: None }).await;
-    c1.recv_until(|p| matches!(p, ClientBoundPacket::SelectChart { result: PacketResult::Success(()), .. })).await;
-    c2.recv_until(|p| matches!(p, ClientBoundPacket::ChangeState { game_state: GameState::SelectChart { chart_id: Some(42) }, .. })).await;
+    c1.send(&ServerBoundPacket::SelectChart {
+        id: 42,
+        trailer: None,
+    })
+    .await;
+    c1.recv_until(|p| {
+        matches!(
+            p,
+            ClientBoundPacket::SelectChart {
+                result: PacketResult::Success(()),
+                ..
+            }
+        )
+    })
+    .await;
+    c2.recv_until(|p| {
+        matches!(
+            p,
+            ClientBoundPacket::ChangeState {
+                game_state: GameState::SelectChart { chart_id: Some(42) },
+                ..
+            }
+        )
+    })
+    .await;
 
     let body = get_rooms(http_port).await;
     assert_eq!(body["total"], 1, "hidden room must be filtered: {body}");

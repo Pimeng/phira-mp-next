@@ -1,7 +1,9 @@
 //! ServerBound 包（客户端 → 服务端，3.2 节，16 个）。
 
 use crate::bytes::{self, CodecError, Encode};
-use crate::packet::data::{JudgeEvent, TouchFrame, MAX_STRING_CHAT, MAX_STRING_ROOM_ID, MAX_STRING_TOKEN};
+use crate::packet::data::{
+    JudgeEvent, MAX_STRING_CHAT, MAX_STRING_ROOM_ID, MAX_STRING_TOKEN, TouchFrame,
+};
 use ::bytes::{Bytes, BytesMut};
 
 #[derive(Debug, Clone)]
@@ -9,17 +11,36 @@ pub enum ServerBoundPacket {
     /// 0x00
     Ping,
     /// 0x01 token(≤32)
-    Authenticate { token: String, trailer: Option<Bytes> },
+    Authenticate {
+        token: String,
+        trailer: Option<Bytes>,
+    },
     /// 0x02 message(≤200)
-    Chat { message: String, trailer: Option<Bytes> },
+    Chat {
+        message: String,
+        trailer: Option<Bytes>,
+    },
     /// 0x03
-    Touches { frames: Vec<TouchFrame>, trailer: Option<Bytes> },
+    Touches {
+        frames: Vec<TouchFrame>,
+        trailer: Option<Bytes>,
+    },
     /// 0x04
-    Judges { judges: Vec<JudgeEvent>, trailer: Option<Bytes> },
+    Judges {
+        judges: Vec<JudgeEvent>,
+        trailer: Option<Bytes>,
+    },
     /// 0x05 roomId(≤20)
-    CreateRoom { room_id: String, trailer: Option<Bytes> },
+    CreateRoom {
+        room_id: String,
+        trailer: Option<Bytes>,
+    },
     /// 0x06
-    JoinRoom { room_id: String, monitor: bool, trailer: Option<Bytes> },
+    JoinRoom {
+        room_id: String,
+        monitor: bool,
+        trailer: Option<Bytes>,
+    },
     /// 0x07
     LeaveRoom { trailer: Option<Bytes> },
     /// 0x08（注意：服务端忽略值按切换处理）
@@ -35,7 +56,10 @@ pub enum ServerBoundPacket {
     /// 0x0D
     CancelReady { trailer: Option<Bytes> },
     /// 0x0E
-    Played { record_id: i32, trailer: Option<Bytes> },
+    Played {
+        record_id: i32,
+        trailer: Option<Bytes>,
+    },
     /// 0x0F
     Abort { trailer: Option<Bytes> },
 }
@@ -65,7 +89,10 @@ impl ServerBoundPacket {
                 for _ in 0..count {
                     frames.push(crate::bytes::Decode::decode(&mut buf)?);
                 }
-                ServerBoundPacket::Touches { frames, trailer: tr(&mut buf) }
+                ServerBoundPacket::Touches {
+                    frames,
+                    trailer: tr(&mut buf),
+                }
             }
             0x04 => {
                 let count = bytes::read_varint(&mut buf)?;
@@ -73,7 +100,10 @@ impl ServerBoundPacket {
                 for _ in 0..count {
                     judges.push(crate::bytes::Decode::decode(&mut buf)?);
                 }
-                ServerBoundPacket::Judges { judges, trailer: tr(&mut buf) }
+                ServerBoundPacket::Judges {
+                    judges,
+                    trailer: tr(&mut buf),
+                }
             }
             0x05 => ServerBoundPacket::CreateRoom {
                 room_id: bytes::read_string(&mut buf, MAX_STRING_ROOM_ID)?,
@@ -84,7 +114,9 @@ impl ServerBoundPacket {
                 monitor: bytes::read_bool(&mut buf)?,
                 trailer: tr(&mut buf),
             },
-            0x07 => ServerBoundPacket::LeaveRoom { trailer: tr(&mut buf) },
+            0x07 => ServerBoundPacket::LeaveRoom {
+                trailer: tr(&mut buf),
+            },
             0x08 => ServerBoundPacket::LockRoom {
                 lock: bytes::read_bool(&mut buf)?,
                 trailer: tr(&mut buf),
@@ -97,14 +129,22 @@ impl ServerBoundPacket {
                 id: bytes::read_i32(&mut buf)?,
                 trailer: tr(&mut buf),
             },
-            0x0B => ServerBoundPacket::RequestStart { trailer: tr(&mut buf) },
-            0x0C => ServerBoundPacket::Ready { trailer: tr(&mut buf) },
-            0x0D => ServerBoundPacket::CancelReady { trailer: tr(&mut buf) },
+            0x0B => ServerBoundPacket::RequestStart {
+                trailer: tr(&mut buf),
+            },
+            0x0C => ServerBoundPacket::Ready {
+                trailer: tr(&mut buf),
+            },
+            0x0D => ServerBoundPacket::CancelReady {
+                trailer: tr(&mut buf),
+            },
             0x0E => ServerBoundPacket::Played {
                 record_id: bytes::read_i32(&mut buf)?,
                 trailer: tr(&mut buf),
             },
-            0x0F => ServerBoundPacket::Abort { trailer: tr(&mut buf) },
+            0x0F => ServerBoundPacket::Abort {
+                trailer: tr(&mut buf),
+            },
             _ => return Err(CodecError::UnknownId("serverbound packet", id)),
         })
     }
@@ -141,13 +181,22 @@ impl Encode for ServerBoundPacket {
             ServerBoundPacket::CreateRoom { room_id, trailer } => {
                 encode_with_trailer(buf, 0x05, |b| bytes::write_string(b, room_id), trailer)
             }
-            ServerBoundPacket::JoinRoom { room_id, monitor, trailer } => {
-                encode_with_trailer(buf, 0x06, |b| {
+            ServerBoundPacket::JoinRoom {
+                room_id,
+                monitor,
+                trailer,
+            } => encode_with_trailer(
+                buf,
+                0x06,
+                |b| {
                     bytes::write_string(b, room_id);
                     bytes::write_bool(b, *monitor);
-                }, trailer)
+                },
+                trailer,
+            ),
+            ServerBoundPacket::LeaveRoom { trailer } => {
+                encode_with_trailer(buf, 0x07, |_| {}, trailer)
             }
-            ServerBoundPacket::LeaveRoom { trailer } => encode_with_trailer(buf, 0x07, |_| {}, trailer),
             ServerBoundPacket::LockRoom { lock, trailer } => {
                 encode_with_trailer(buf, 0x08, |b| bytes::write_bool(b, *lock), trailer)
             }
@@ -157,9 +206,13 @@ impl Encode for ServerBoundPacket {
             ServerBoundPacket::SelectChart { id, trailer } => {
                 encode_with_trailer(buf, 0x0A, |b| bytes::write_i32(b, *id), trailer)
             }
-            ServerBoundPacket::RequestStart { trailer } => encode_with_trailer(buf, 0x0B, |_| {}, trailer),
+            ServerBoundPacket::RequestStart { trailer } => {
+                encode_with_trailer(buf, 0x0B, |_| {}, trailer)
+            }
             ServerBoundPacket::Ready { trailer } => encode_with_trailer(buf, 0x0C, |_| {}, trailer),
-            ServerBoundPacket::CancelReady { trailer } => encode_with_trailer(buf, 0x0D, |_| {}, trailer),
+            ServerBoundPacket::CancelReady { trailer } => {
+                encode_with_trailer(buf, 0x0D, |_| {}, trailer)
+            }
             ServerBoundPacket::Played { record_id, trailer } => {
                 encode_with_trailer(buf, 0x0E, |b| bytes::write_i32(b, *record_id), trailer)
             }
@@ -180,7 +233,10 @@ mod tests {
 
     #[test]
     fn roundtrip_basic() {
-        assert!(matches!(roundtrip(&ServerBoundPacket::Ping), ServerBoundPacket::Ping));
+        assert!(matches!(
+            roundtrip(&ServerBoundPacket::Ping),
+            ServerBoundPacket::Ping
+        ));
         match roundtrip(&ServerBoundPacket::Authenticate {
             token: "tok".into(),
             trailer: None,
@@ -193,7 +249,9 @@ mod tests {
             monitor: true,
             trailer: None,
         }) {
-            ServerBoundPacket::JoinRoom { room_id, monitor, .. } => {
+            ServerBoundPacket::JoinRoom {
+                room_id, monitor, ..
+            } => {
                 assert_eq!(room_id, "R1");
                 assert!(monitor);
             }
@@ -203,11 +261,14 @@ mod tests {
 
     #[test]
     fn roundtrip_monitor_data() {
-        use crate::packet::data::{CompactPos, Judgement, JudgeEvent, TouchFrame, TouchPoint};
+        use crate::packet::data::{CompactPos, JudgeEvent, Judgement, TouchFrame, TouchPoint};
         let touches = ServerBoundPacket::Touches {
             frames: vec![TouchFrame {
                 time: 1.5,
-                points: vec![TouchPoint { id: -3, pos: CompactPos::from_f32(0.25, -0.5) }],
+                points: vec![TouchPoint {
+                    id: -3,
+                    pos: CompactPos::from_f32(0.25, -0.5),
+                }],
             }],
             trailer: None,
         };

@@ -6,10 +6,10 @@
 use super::handler::{HandleOutcome, HandlerContext, PacketHandler};
 use crate::events;
 use crate::log::log_info;
+use crate::packet::PacketResult;
 use crate::packet::clientbound::{AuthenticateData, ClientBoundPacket};
 use crate::packet::data::FullUserProfile;
 use crate::packet::serverbound::ServerBoundPacket;
-use crate::packet::PacketResult;
 use crate::phira::UserInfo;
 use futures::future::BoxFuture;
 use std::sync::Arc;
@@ -47,10 +47,7 @@ impl AuthenticateHandler {
     /// 认证数据源收敛（对应 Java `eventUserInfo != null ? ... : PhiraFetcher.GET_USER_INFO`）。
     ///
     /// 返回 `Err(cancel_reason)` 表示 PlayerPreAuthenticateEvent 取消了本次登录。
-    async fn resolve_user_info(
-        ctx: &HandlerContext,
-        token: &str,
-    ) -> Result<Arc<UserInfo>, String> {
+    async fn resolve_user_info(ctx: &HandlerContext, token: &str) -> Result<Arc<UserInfo>, String> {
         // 1. PlayerPreAuthenticateEvent：可取消；可注入 user_info 跳过远程验证
         let ev = events::PlayerPreAuthenticateEvent {
             token: token.to_string(),
@@ -116,7 +113,10 @@ impl PacketHandler for AuthenticateHandler {
 
             // 全局封禁检查（控制台 ban 命令）
             if ctx.server.bans.is_banned(info.id) {
-                let msg = ctx.server.i18n.message(info.language.as_deref(), "ERROR_BANNED");
+                let msg = ctx
+                    .server
+                    .i18n
+                    .message(info.language.as_deref(), "ERROR_BANNED");
                 return Self::fail_and_close(ctx, msg).await;
             }
 
@@ -125,7 +125,11 @@ impl PacketHandler for AuthenticateHandler {
                 user_info: info.clone(),
                 cancel_reason: None,
             };
-            let ev = ctx.server.events.post_mut(events::PLAYER_PRE_LOGIN, ev).await;
+            let ev = ctx
+                .server
+                .events
+                .post_mut(events::PLAYER_PRE_LOGIN, ev)
+                .await;
             if let Some(reason) = ev.cancel_reason {
                 return Self::fail_and_close(ctx, reason).await;
             }
@@ -133,15 +137,30 @@ impl PacketHandler for AuthenticateHandler {
             // 注册/恢复（对应 Java resolvePlayer 的默认 LocalPlayer 路径；
             // 自定义玩家类型经 `extensions.player_resolver` 接管）
             let (result, old_conn) = {
-                let resolver = ctx.server.extensions.player_resolver.read().unwrap().clone();
+                let resolver = ctx
+                    .server
+                    .extensions
+                    .player_resolver
+                    .read()
+                    .unwrap()
+                    .clone();
                 let res = match resolver {
                     Some(r) => r(ctx.server.clone(), info.clone(), ctx.conn.clone()).await,
-                    None => ctx.server.players.resolve_or_resume(info.clone(), &ctx.conn).await,
+                    None => {
+                        ctx.server
+                            .players
+                            .resolve_or_resume(info.clone(), &ctx.conn)
+                            .await
+                    }
                 };
                 match res {
                     Ok(r) => r,
                     Err(key) => {
-                        return Self::fail_and_close(ctx, ctx.server.i18n.message(info.language.as_deref(), &key)).await;
+                        return Self::fail_and_close(
+                            ctx,
+                            ctx.server.i18n.message(info.language.as_deref(), &key),
+                        )
+                        .await;
                     }
                 }
             };
@@ -149,10 +168,15 @@ impl PacketHandler for AuthenticateHandler {
 
             // 顶号：旧连接发「他处登录」并标记 duplicate 后关闭
             if let Some(old) = old_conn.filter(|c| !c.is_closed()) {
-                old.send(ClientBoundPacket::message(crate::packet::message::Message::Chat {
-                    user: 0,
-                    content: ctx.server.i18n.message(player.language().as_deref(), "ERROR_LOGGED_IN_ELSEWHERE"),
-                }))
+                old.send(ClientBoundPacket::message(
+                    crate::packet::message::Message::Chat {
+                        user: 0,
+                        content: ctx
+                            .server
+                            .i18n
+                            .message(player.language().as_deref(), "ERROR_LOGGED_IN_ELSEWHERE"),
+                    },
+                ))
                 .await;
                 old.mark_duplicate();
                 old.close().await;
@@ -165,9 +189,25 @@ impl PacketHandler for AuthenticateHandler {
                 (events::PLAYER_CONNECTION_BIND, false)
             };
             if ev_created {
-                ctx.server.events.post(key, events::PlayerCreateEvent { player: player.clone() }).await;
+                ctx.server
+                    .events
+                    .post(
+                        key,
+                        events::PlayerCreateEvent {
+                            player: player.clone(),
+                        },
+                    )
+                    .await;
             } else {
-                ctx.server.events.post(key, events::PlayerConnectionBindEvent { player: player.clone() }).await;
+                ctx.server
+                    .events
+                    .post(
+                        key,
+                        events::PlayerConnectionBindEvent {
+                            player: player.clone(),
+                        },
+                    )
+                    .await;
             }
 
             // 回复 Authenticate 包（恢复时附带 RoomInfo）
@@ -200,12 +240,23 @@ impl PacketHandler for AuthenticateHandler {
                 ("id", info.id),
                 ("name", info.name),
             );
-            ctx.server.events.post(events::PLAYER_POST_LOGIN, events::PlayerPostLoginEvent { player: player.clone() }).await;
+            ctx.server
+                .events
+                .post(
+                    events::PLAYER_POST_LOGIN,
+                    events::PlayerPostLoginEvent {
+                        player: player.clone(),
+                    },
+                )
+                .await;
 
             // Switch：恢复挂起 → RoomHandler；否则 → PlayHandler
-            let fallback: Box<dyn PacketHandler> = Box::new(super::play_handler::PlayHandler::new(player.clone()));
+            let fallback: Box<dyn PacketHandler> =
+                Box::new(super::play_handler::PlayHandler::new(player.clone()));
             let next: Box<dyn PacketHandler> = match result.suspended {
-                Some(s) => Box::new(super::room_handler::RoomHandler::new(player, s.room, fallback)),
+                Some(s) => Box::new(super::room_handler::RoomHandler::new(
+                    player, s.room, fallback,
+                )),
                 None => fallback,
             };
             HandleOutcome::Switch(next)

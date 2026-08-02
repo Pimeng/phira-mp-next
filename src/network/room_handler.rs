@@ -8,9 +8,9 @@
 use super::handler::{HandleOutcome, HandlerContext, PacketHandler};
 use crate::events;
 use crate::log::log_debug;
+use crate::packet::PacketResult;
 use crate::packet::clientbound::ClientBoundPacket;
 use crate::packet::serverbound::ServerBoundPacket;
-use crate::packet::PacketResult;
 use crate::player::Player;
 use crate::room::{GameResult, PlayedCheck, Room};
 use futures::future::BoxFuture;
@@ -23,8 +23,16 @@ pub struct RoomHandler {
 }
 
 impl RoomHandler {
-    pub fn new(player: Arc<dyn Player>, room: Arc<dyn Room>, fallback: Box<dyn PacketHandler>) -> Self {
-        Self { player, room, fallback: Some(fallback) }
+    pub fn new(
+        player: Arc<dyn Player>,
+        room: Arc<dyn Room>,
+        fallback: Box<dyn PacketHandler>,
+    ) -> Self {
+        Self {
+            player,
+            room,
+            fallback: Some(fallback),
+        }
     }
 
     /// = Java `handleWithException(action, successPacket, failedPacket)`：
@@ -45,7 +53,10 @@ impl RoomHandler {
                 crate::room::send_broadcasts(plan).await;
             }
             Err(e) => {
-                let msg = ctx.server.i18n.message(self.player.language().as_deref(), e.0);
+                let msg = ctx
+                    .server
+                    .i18n
+                    .message(self.player.language().as_deref(), e.0);
                 ctx.send(failed(msg)).await;
             }
         }
@@ -74,7 +85,8 @@ impl RoomHandler {
         };
         let ev = ctx.server.events.post_mut(events::ROOM_CHAT, ev).await;
         if let Some(reason) = ev.cancel_reason {
-            ctx.send(ClientBoundPacket::chat_result(PacketResult::failed(reason))).await;
+            ctx.send(ClientBoundPacket::chat_result(PacketResult::failed(reason)))
+                .await;
             return HandleOutcome::Ok;
         }
 
@@ -92,16 +104,29 @@ impl RoomHandler {
     async fn on_leave_room(&mut self, ctx: &HandlerContext) -> HandleOutcome {
         let (left, plan, _destroyed) = self.room.leave(self.player.id());
         if !left {
-            let msg = ctx.server.i18n.message(self.player.language().as_deref(), "ERROR_ROOM_NOT_FOUND");
-            ctx.send(ClientBoundPacket::leave_room_result(PacketResult::failed(msg))).await;
+            let msg = ctx
+                .server
+                .i18n
+                .message(self.player.language().as_deref(), "ERROR_ROOM_NOT_FOUND");
+            ctx.send(ClientBoundPacket::leave_room_result(PacketResult::failed(
+                msg,
+            )))
+            .await;
             return HandleOutcome::Ok;
         }
-        ctx.send(ClientBoundPacket::leave_room_result(PacketResult::ok())).await;
+        ctx.send(ClientBoundPacket::leave_room_result(PacketResult::ok()))
+            .await;
         crate::room::send_broadcasts(plan).await;
-        ctx.server.events.post(events::PLAYER_LEAVE_ROOM, events::PlayerLeaveRoomEvent {
-            player: self.player.clone(),
-            room: self.room.clone(),
-        }).await;
+        ctx.server
+            .events
+            .post(
+                events::PLAYER_LEAVE_ROOM,
+                events::PlayerLeaveRoomEvent {
+                    player: self.player.clone(),
+                    room: self.room.clone(),
+                },
+            )
+            .await;
         // 离房切回 fallback（对应 Java setPacketHandler(fallback)）
         match self.fallback.take() {
             Some(fb) => HandleOutcome::Switch(fb),
@@ -111,11 +136,17 @@ impl RoomHandler {
 
     async fn on_lock_room(&self, ctx: &HandlerContext) -> HandleOutcome {
         let locked = !self.room.setting().locked;
-        ctx.server.events.post(events::ROOM_LOCK_CHANGE, events::RoomLockChangeEvent {
-            room: self.room.clone(),
-            player: self.player.clone(),
-            locked,
-        }).await;
+        ctx.server
+            .events
+            .post(
+                events::ROOM_LOCK_CHANGE,
+                events::RoomLockChangeEvent {
+                    room: self.room.clone(),
+                    player: self.player.clone(),
+                    locked,
+                },
+            )
+            .await;
         let room = self.room.clone();
         let uid = self.player.id();
         self.handle_with_error(
@@ -129,11 +160,17 @@ impl RoomHandler {
 
     async fn on_cycle_room(&self, ctx: &HandlerContext) -> HandleOutcome {
         let cycle = !self.room.setting().cycle;
-        ctx.server.events.post(events::ROOM_CYCLE_CHANGE, events::RoomCycleChangeEvent {
-            room: self.room.clone(),
-            player: self.player.clone(),
-            cycle,
-        }).await;
+        ctx.server
+            .events
+            .post(
+                events::ROOM_CYCLE_CHANGE,
+                events::RoomCycleChangeEvent {
+                    room: self.room.clone(),
+                    player: self.player.clone(),
+                    cycle,
+                },
+            )
+            .await;
         let room = self.room.clone();
         let uid = self.player.id();
         self.handle_with_error(
@@ -158,14 +195,19 @@ impl RoomHandler {
             chart: None,
             cancel_reason: None,
         };
-        let ev = ctx.server.events.post_mut(events::ROOM_PRE_SELECT_CHART, ev).await;
+        let ev = ctx
+            .server
+            .events
+            .post_mut(events::ROOM_PRE_SELECT_CHART, ev)
+            .await;
         if let Some(reason) = ev.cancel_reason {
             ctx.send(mk(PacketResult::failed(reason))).await;
             return HandleOutcome::Ok;
         }
 
         if let Err(e) = self.room.validate_select_chart(self.player.id()) {
-            ctx.send(mk(PacketResult::failed(i18n.message(lang.as_deref(), e.0)))).await;
+            ctx.send(mk(PacketResult::failed(i18n.message(lang.as_deref(), e.0))))
+                .await;
             return HandleOutcome::Ok;
         }
 
@@ -178,30 +220,46 @@ impl RoomHandler {
             },
         };
         let Some(chart) = chart else {
-            ctx.send(mk(PacketResult::failed(i18n.message(lang.as_deref(), "ERROR_CHART_NOT_FOUND")))).await;
+            ctx.send(mk(PacketResult::failed(
+                i18n.message(lang.as_deref(), "ERROR_CHART_NOT_FOUND"),
+            )))
+            .await;
             return HandleOutcome::Ok;
         };
 
         let room = self.room.clone();
         let uid = self.player.id();
         let name = chart.name.clone();
-        let outcome = self.handle_with_error(
-            ctx,
-            move || room.commit_select_chart(uid, chart_id, name),
-            || ClientBoundPacket::select_chart_result(PacketResult::ok()),
-            |msg| ClientBoundPacket::select_chart_result(PacketResult::failed(msg)),
-        )
-        .await;
+        let outcome = self
+            .handle_with_error(
+                ctx,
+                move || room.commit_select_chart(uid, chart_id, name),
+                || ClientBoundPacket::select_chart_result(PacketResult::ok()),
+                |msg| ClientBoundPacket::select_chart_result(PacketResult::failed(msg)),
+            )
+            .await;
 
-        ctx.server.events.post(events::ROOM_POST_SELECT_CHART, events::RoomPostSelectChartEvent {
-            room: self.room.clone(),
-            player: self.player.clone(),
-            chart_id,
-        }).await;
-        ctx.server.events.post(events::ROOM_STATE_CHANGE, events::RoomStateChangeEvent {
-            room: self.room.clone(),
-            new_state: self.room.game_state_protocol(),
-        }).await;
+        ctx.server
+            .events
+            .post(
+                events::ROOM_POST_SELECT_CHART,
+                events::RoomPostSelectChartEvent {
+                    room: self.room.clone(),
+                    player: self.player.clone(),
+                    chart_id,
+                },
+            )
+            .await;
+        ctx.server
+            .events
+            .post(
+                events::ROOM_STATE_CHANGE,
+                events::RoomStateChangeEvent {
+                    room: self.room.clone(),
+                    new_state: self.room.game_state_protocol(),
+                },
+            )
+            .await;
         outcome
     }
 
@@ -212,34 +270,63 @@ impl RoomHandler {
             player: self.player.clone(),
             cancel_reason: None,
         };
-        let ev = ctx.server.events.post_mut(events::GAME_REQUIRE_START, ev).await;
+        let ev = ctx
+            .server
+            .events
+            .post_mut(events::GAME_REQUIRE_START, ev)
+            .await;
         if let Some(reason) = ev.cancel_reason {
-            ctx.send(ClientBoundPacket::request_start_result(PacketResult::failed(reason))).await;
+            ctx.send(ClientBoundPacket::request_start_result(
+                PacketResult::failed(reason),
+            ))
+            .await;
             return HandleOutcome::Ok;
         }
 
         let room = self.room.clone();
         let uid = self.player.id();
-        let outcome = self.handle_with_error(
-            ctx,
-            move || room.require_start(uid),
-            || ClientBoundPacket::request_start_result(PacketResult::ok()),
-            |msg| ClientBoundPacket::request_start_result(PacketResult::failed(msg)),
-        )
-        .await;
+        let outcome = self
+            .handle_with_error(
+                ctx,
+                move || room.require_start(uid),
+                || ClientBoundPacket::request_start_result(PacketResult::ok()),
+                |msg| ClientBoundPacket::request_start_result(PacketResult::failed(msg)),
+            )
+            .await;
 
-        ctx.server.events.post(events::GAME_START, events::GameStartEvent {
-            room: self.room.clone(),
-            player: self.player.clone(),
-        }).await;
-        ctx.server.events.post(events::ROOM_STATE_CHANGE, events::RoomStateChangeEvent {
-            room: self.room.clone(),
-            new_state: self.room.game_state_protocol(),
-        }).await;
-        if matches!(self.room.game_state_protocol(), crate::packet::state::GameState::Playing) {
-            ctx.server.events.post(events::GAME_PLAYING_START, events::GamePlayingStartEvent {
-                room: self.room.clone(),
-            }).await;
+        ctx.server
+            .events
+            .post(
+                events::GAME_START,
+                events::GameStartEvent {
+                    room: self.room.clone(),
+                    player: self.player.clone(),
+                },
+            )
+            .await;
+        ctx.server
+            .events
+            .post(
+                events::ROOM_STATE_CHANGE,
+                events::RoomStateChangeEvent {
+                    room: self.room.clone(),
+                    new_state: self.room.game_state_protocol(),
+                },
+            )
+            .await;
+        if matches!(
+            self.room.game_state_protocol(),
+            crate::packet::state::GameState::Playing
+        ) {
+            ctx.server
+                .events
+                .post(
+                    events::GAME_PLAYING_START,
+                    events::GamePlayingStartEvent {
+                        room: self.room.clone(),
+                    },
+                )
+                .await;
         }
         outcome
     }
@@ -247,29 +334,52 @@ impl RoomHandler {
     async fn on_ready(&self, ctx: &HandlerContext) -> HandleOutcome {
         let room = self.room.clone();
         let uid = self.player.id();
-        
+
         match room.ready(uid) {
             Ok((plan, started)) => {
-                ctx.send(ClientBoundPacket::ready_result(PacketResult::ok())).await;
+                ctx.send(ClientBoundPacket::ready_result(PacketResult::ok()))
+                    .await;
                 crate::room::send_broadcasts(plan).await;
-                ctx.server.events.post(events::PLAYER_READY, events::PlayerReadyEvent {
-                    room: self.room.clone(),
-                    player: self.player.clone(),
-                }).await;
+                ctx.server
+                    .events
+                    .post(
+                        events::PLAYER_READY,
+                        events::PlayerReadyEvent {
+                            room: self.room.clone(),
+                            player: self.player.clone(),
+                        },
+                    )
+                    .await;
                 if started {
-                    ctx.server.events.post(events::ROOM_STATE_CHANGE, events::RoomStateChangeEvent {
-                        room: self.room.clone(),
-                        new_state: self.room.game_state_protocol(),
-                    }).await;
-                    ctx.server.events.post(events::GAME_PLAYING_START, events::GamePlayingStartEvent {
-                        room: self.room.clone(),
-                    }).await;
+                    ctx.server
+                        .events
+                        .post(
+                            events::ROOM_STATE_CHANGE,
+                            events::RoomStateChangeEvent {
+                                room: self.room.clone(),
+                                new_state: self.room.game_state_protocol(),
+                            },
+                        )
+                        .await;
+                    ctx.server
+                        .events
+                        .post(
+                            events::GAME_PLAYING_START,
+                            events::GamePlayingStartEvent {
+                                room: self.room.clone(),
+                            },
+                        )
+                        .await;
                 }
                 HandleOutcome::Ok
             }
             Err(e) => {
-                let msg = ctx.server.i18n.message(self.player.language().as_deref(), e.0);
-                ctx.send(ClientBoundPacket::ready_result(PacketResult::failed(msg))).await;
+                let msg = ctx
+                    .server
+                    .i18n
+                    .message(self.player.language().as_deref(), e.0);
+                ctx.send(ClientBoundPacket::ready_result(PacketResult::failed(msg)))
+                    .await;
                 HandleOutcome::Ok
             }
         }
@@ -278,17 +388,24 @@ impl RoomHandler {
     async fn on_cancel_ready(&self, ctx: &HandlerContext) -> HandleOutcome {
         let room = self.room.clone();
         let uid = self.player.id();
-        let outcome = self.handle_with_error(
-            ctx,
-            move || room.cancel_ready(uid),
-            || ClientBoundPacket::cancel_ready_result(PacketResult::ok()),
-            |msg| ClientBoundPacket::cancel_ready_result(PacketResult::failed(msg)),
-        )
-        .await;
-        ctx.server.events.post(events::PLAYER_CANCEL_READY, events::PlayerCancelReadyEvent {
-            room: self.room.clone(),
-            player: self.player.clone(),
-        }).await;
+        let outcome = self
+            .handle_with_error(
+                ctx,
+                move || room.cancel_ready(uid),
+                || ClientBoundPacket::cancel_ready_result(PacketResult::ok()),
+                |msg| ClientBoundPacket::cancel_ready_result(PacketResult::failed(msg)),
+            )
+            .await;
+        ctx.server
+            .events
+            .post(
+                events::PLAYER_CANCEL_READY,
+                events::PlayerCancelReadyEvent {
+                    room: self.room.clone(),
+                    player: self.player.clone(),
+                },
+            )
+            .await;
         outcome
     }
 
@@ -300,7 +417,8 @@ impl RoomHandler {
         let check = match self.room.check_played(self.player.id()) {
             Ok(c) => c,
             Err(e) => {
-                ctx.send(mk(PacketResult::failed(i18n.message(lang.as_deref(), e.0)))).await;
+                ctx.send(mk(PacketResult::failed(i18n.message(lang.as_deref(), e.0))))
+                    .await;
                 return HandleOutcome::Ok;
             }
         };
@@ -315,7 +433,10 @@ impl RoomHandler {
             None => fetch_record(ctx, record_id).await,
         };
         let Some(record) = record else {
-            ctx.send(mk(PacketResult::failed(i18n.message(lang.as_deref(), "ERROR_RECORD_NOT_FOUND")))).await;
+            ctx.send(mk(PacketResult::failed(
+                i18n.message(lang.as_deref(), "ERROR_RECORD_NOT_FOUND"),
+            )))
+            .await;
             return HandleOutcome::Ok;
         };
 
@@ -325,13 +446,15 @@ impl RoomHandler {
         let score = record.score;
         let accuracy = record.accuracy;
         let full_combo = record.full_combo;
-        let outcome = self.handle_with_error(
-            ctx,
-            move || {
-                let out = room.commit_played(uid, score, accuracy, full_combo)?;
-                // 录制数据落盘（触发条件：触摸/判定非空，6.5/10 节）
-                if let Some(rec) = out.recording
-                    && let Some(dir) = crate::server::with_server_ctx(|c| c.record_dir.clone()).flatten()
+        let outcome = self
+            .handle_with_error(
+                ctx,
+                move || {
+                    let out = room.commit_played(uid, score, accuracy, full_combo)?;
+                    // 录制数据落盘（触发条件：触摸/判定非空，6.5/10 节）
+                    if let Some(rec) = out.recording
+                        && let Some(dir) =
+                            crate::server::with_server_ctx(|c| c.record_dir.clone()).flatten()
                         && let Some(phira_rec) = crate::record::maybe_build_record(
                             record_id,
                             uid,
@@ -340,40 +463,64 @@ impl RoomHandler {
                             rec.chart_name,
                             rec.touch_frames,
                             rec.judge_events,
-                        ) {
-                            let dir = std::path::PathBuf::from(dir);
-                            tokio::task::spawn_blocking(move || {
-                                if let Err(e) = phira_rec.write_to(&dir, crate::record::CompressionType::Zstd) {
-                                    crate::log::log_warn_global!(
-                                        "LOG_ROOM_RECORD_WRITE_FAILED",
-                                        ("err", e.to_string()),
-                                    );
-                                }
-                            });
-                        }
-                Ok(out.broadcasts)
-            },
-            || ClientBoundPacket::played_result(PacketResult::ok()),
-            |msg| ClientBoundPacket::played_result(PacketResult::failed(msg)),
-        )
-        .await;
+                        )
+                    {
+                        let dir = std::path::PathBuf::from(dir);
+                        tokio::task::spawn_blocking(move || {
+                            if let Err(e) =
+                                phira_rec.write_to(&dir, crate::record::CompressionType::Zstd)
+                            {
+                                crate::log::log_warn_global!(
+                                    "LOG_ROOM_RECORD_WRITE_FAILED",
+                                    ("err", e.to_string()),
+                                );
+                            }
+                        });
+                    }
+                    Ok(out.broadcasts)
+                },
+                || ClientBoundPacket::played_result(PacketResult::ok()),
+                |msg| ClientBoundPacket::played_result(PacketResult::failed(msg)),
+            )
+            .await;
 
-        ctx.server.events.post(events::PLAYER_PLAYED, events::PlayerPlayedEvent {
-            room: self.room.clone(),
-            player: self.player.clone(),
-            score: record.score,
-            accuracy: record.accuracy,
-            full_combo: record.full_combo,
-        }).await;
-        if !matches!(self.room.game_state_protocol(), crate::packet::state::GameState::Playing) {
-            ctx.server.events.post(events::GAME_END, events::GameEndEvent {
-                room: self.room.clone(),
-                records: self.room.game_records(),
-            }).await;
-            ctx.server.events.post(events::ROOM_STATE_CHANGE, events::RoomStateChangeEvent {
-                room: self.room.clone(),
-                new_state: self.room.game_state_protocol(),
-            }).await;
+        ctx.server
+            .events
+            .post(
+                events::PLAYER_PLAYED,
+                events::PlayerPlayedEvent {
+                    room: self.room.clone(),
+                    player: self.player.clone(),
+                    score: record.score,
+                    accuracy: record.accuracy,
+                    full_combo: record.full_combo,
+                },
+            )
+            .await;
+        if !matches!(
+            self.room.game_state_protocol(),
+            crate::packet::state::GameState::Playing
+        ) {
+            ctx.server
+                .events
+                .post(
+                    events::GAME_END,
+                    events::GameEndEvent {
+                        room: self.room.clone(),
+                        records: self.room.game_records(),
+                    },
+                )
+                .await;
+            ctx.server
+                .events
+                .post(
+                    events::ROOM_STATE_CHANGE,
+                    events::RoomStateChangeEvent {
+                        room: self.room.clone(),
+                        new_state: self.room.game_state_protocol(),
+                    },
+                )
+                .await;
         }
         outcome
     }
@@ -381,17 +528,24 @@ impl RoomHandler {
     async fn on_abort(&self, ctx: &HandlerContext) -> HandleOutcome {
         let room = self.room.clone();
         let uid = self.player.id();
-        let outcome = self.handle_with_error(
-            ctx,
-            move || room.commit_abort(uid).map(|out| out.broadcasts),
-            || ClientBoundPacket::abort_result(PacketResult::ok()),
-            |msg| ClientBoundPacket::abort_result(PacketResult::failed(msg)),
-        )
-        .await;
-        ctx.server.events.post(events::GAME_ABORT, events::GameAbortEvent {
-            room: self.room.clone(),
-            player: self.player.clone(),
-        }).await;
+        let outcome = self
+            .handle_with_error(
+                ctx,
+                move || room.commit_abort(uid).map(|out| out.broadcasts),
+                || ClientBoundPacket::abort_result(PacketResult::ok()),
+                |msg| ClientBoundPacket::abort_result(PacketResult::failed(msg)),
+            )
+            .await;
+        ctx.server
+            .events
+            .post(
+                events::GAME_ABORT,
+                events::GameAbortEvent {
+                    room: self.room.clone(),
+                    player: self.player.clone(),
+                },
+            )
+            .await;
         outcome
     }
 }
@@ -433,11 +587,13 @@ impl PacketHandler for RoomHandler {
                 ServerBoundPacket::Abort { .. } => self.on_abort(ctx).await,
                 // touch/judge：收集 + 转发 monitor（无回复包）
                 ServerBoundPacket::Touches { frames, .. } => {
-                    crate::room::send_broadcasts(self.room.touch_send(self.player.id(), frames)).await;
+                    crate::room::send_broadcasts(self.room.touch_send(self.player.id(), frames))
+                        .await;
                     HandleOutcome::Ok
                 }
                 ServerBoundPacket::Judges { judges, .. } => {
-                    crate::room::send_broadcasts(self.room.judge_send(self.player.id(), judges)).await;
+                    crate::room::send_broadcasts(self.room.judge_send(self.player.id(), judges))
+                        .await;
                     HandleOutcome::Ok
                 }
                 // 房间内收到大厅/认证包 → 踢（对应 Java RoomHandler.kick()）
@@ -455,6 +611,9 @@ async fn fetch_chart(ctx: &HandlerContext, chart_id: i32) -> Option<Arc<crate::p
 }
 
 /// 远程拉成绩（对应 Java `PhiraFetcher.GET_RECORD_INFO`）。
-async fn fetch_record(ctx: &HandlerContext, record_id: i32) -> Option<Arc<crate::phira::GameRecord>> {
+async fn fetch_record(
+    ctx: &HandlerContext,
+    record_id: i32,
+) -> Option<Arc<crate::phira::GameRecord>> {
     ctx.server.phira.get_record_info(record_id).await.ok()
 }

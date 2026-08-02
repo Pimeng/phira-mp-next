@@ -69,7 +69,11 @@ async fn start_mock(script: Arc<Script>) -> MockApi {
         }
     });
 
-    MockApi { addr, shutdown: tx, requests }
+    MockApi {
+        addr,
+        shutdown: tx,
+        requests,
+    }
 }
 
 fn respond(path: &str, token: Option<&str>, script: &Script) -> (&'static str, String) {
@@ -97,33 +101,49 @@ fn respond(path: &str, token: Option<&str>, script: &Script) -> (&'static str, S
             .and_then(|t| t.strip_prefix("tok-"))
             .and_then(|s| s.parse().ok())
             .unwrap_or(1);
-        return ("200 OK", json!({
-            "id": id, "name": format!("User{id}"), "language": "en-US",
-            "rks": 16.0, "banned": false, "loginBanned": false, "roles": 2, "exp": 100
-        }).to_string());
+        return (
+            "200 OK",
+            json!({
+                "id": id, "name": format!("User{id}"), "language": "en-US",
+                "rks": 16.0, "banned": false, "loginBanned": false, "roles": 2, "exp": 100
+            })
+            .to_string(),
+        );
     }
     if let Some(rest) = seg.strip_prefix("chart/") {
         let id: i32 = rest.parse().unwrap_or(0);
-        return ("200 OK", json!({
-            "id": id, "name": format!("Chart{id}"), "level": "IN",
-            "difficulty": 15.5, "charter": "c", "composer": "m",
-            "ranked": false, "uploader": 3
-        }).to_string());
+        return (
+            "200 OK",
+            json!({
+                "id": id, "name": format!("Chart{id}"), "level": "IN",
+                "difficulty": 15.5, "charter": "c", "composer": "m",
+                "ranked": false, "uploader": 3
+            })
+            .to_string(),
+        );
     }
     if let Some(rest) = seg.strip_prefix("record/") {
         let id: i32 = rest.parse().unwrap_or(0);
-        return ("200 OK", json!({
-            "id": id, "player": 7, "chart": 42, "score": 1000000, "accuracy": 100.0,
-            "perfect": 100, "good": 0, "bad": 0, "miss": 0,
-            "fullCombo": true, "maxCombo": 100, "speed": 1.1, "time": "2026-01-01T00:00:00Z"
-        }).to_string());
+        return (
+            "200 OK",
+            json!({
+                "id": id, "player": 7, "chart": 42, "score": 1000000, "accuracy": 100.0,
+                "perfect": 100, "good": 0, "bad": 0, "miss": 0,
+                "fullCombo": true, "maxCombo": 100, "speed": 1.1, "time": "2026-01-01T00:00:00Z"
+            })
+            .to_string(),
+        );
     }
     if let Some(rest) = seg.strip_prefix("user/") {
         let id: i32 = rest.parse().unwrap_or(0);
-        return ("200 OK", json!({
-            "id": id, "name": format!("User{id}"), "language": "zh-CN",
-            "rks": 15.0, "banned": false, "loginBanned": false
-        }).to_string());
+        return (
+            "200 OK",
+            json!({
+                "id": id, "name": format!("User{id}"), "language": "zh-CN",
+                "rks": 15.0, "banned": false, "loginBanned": false
+            })
+            .to_string(),
+        );
     }
     ("404 Not Found", "{}".to_string())
 }
@@ -205,9 +225,18 @@ async fn not_found_returns_immediately() {
     let api = start_mock(script).await;
     let f = fetcher_for(&api).await;
 
-    assert!(matches!(f.get_user(999).await, Err(PhiraError::NotFound(_))));
-    assert!(matches!(f.get_chart_info(404).await, Err(PhiraError::NotFound(_))));
-    assert!(matches!(f.get_record_info(404).await, Err(PhiraError::NotFound(_))));
+    assert!(matches!(
+        f.get_user(999).await,
+        Err(PhiraError::NotFound(_))
+    ));
+    assert!(matches!(
+        f.get_chart_info(404).await,
+        Err(PhiraError::NotFound(_))
+    ));
+    assert!(matches!(
+        f.get_record_info(404).await,
+        Err(PhiraError::NotFound(_))
+    ));
     // 404 不重试：请求数应保持 3
     assert_eq!(api.requests.load(Ordering::SeqCst), 3);
     let _ = api.shutdown.send(());

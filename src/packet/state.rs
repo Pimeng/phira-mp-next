@@ -41,7 +41,11 @@ impl Decode for GameState {
         Ok(match id {
             Self::ID_SELECT_CHART => {
                 let has = bytes::read_bool(buf)?;
-                let chart_id = if has { Some(bytes::read_i32(buf)?) } else { None };
+                let chart_id = if has {
+                    Some(bytes::read_i32(buf)?)
+                } else {
+                    None
+                };
                 GameState::SelectChart { chart_id }
             }
             Self::ID_WAIT_FOR_READY => GameState::WaitForReady,

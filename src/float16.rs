@@ -18,7 +18,6 @@ fn half_to_float_bits(h: u16) -> u32 {
     let e = ((h >> 10) & 0x1F) as i32; // 半精度指数（必须用 i32，避免下溢）
     let m = h & 0x03FF;
 
-    
     if e == 0 {
         if m == 0 {
             // ±0
@@ -69,7 +68,11 @@ pub fn float_to_half(f: f32) -> u16 {
         let half_m = m >> shift;
         // round-to-nearest-even
         let round_bit = (m >> (shift - 1)) & 1;
-        let sticky = if shift > 1 { (m & ((1 << (shift - 1)) - 1)) != 0 } else { false };
+        let sticky = if shift > 1 {
+            (m & ((1 << (shift - 1)) - 1)) != 0
+        } else {
+            false
+        };
         let mut half_m = half_m;
         if round_bit == 1 && (sticky || (half_m & 1) == 1) {
             half_m += 1;

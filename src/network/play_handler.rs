@@ -6,9 +6,9 @@
 use super::handler::{HandleOutcome, HandlerContext, PacketHandler};
 use crate::events;
 use crate::log::{log_debug, log_error};
+use crate::packet::PacketResult;
 use crate::packet::clientbound::{ClientBoundPacket, JoinRoomData};
 use crate::packet::serverbound::ServerBoundPacket;
-use crate::packet::PacketResult;
 use crate::player::Player;
 use crate::room::{JoinOutcome, RoomSetting};
 use futures::future::BoxFuture;
@@ -44,8 +44,16 @@ impl PlayHandler {
         ctx.send(packet).await;
     }
 
-    async fn fail(&self, ctx: &HandlerContext, key: &str, make: impl FnOnce(PacketResult<()>) -> ClientBoundPacket) -> HandleOutcome {
-        let msg = ctx.server.i18n.message(self.player.language().as_deref(), key);
+    async fn fail(
+        &self,
+        ctx: &HandlerContext,
+        key: &str,
+        make: impl FnOnce(PacketResult<()>) -> ClientBoundPacket,
+    ) -> HandleOutcome {
+        let msg = ctx
+            .server
+            .i18n
+            .message(self.player.language().as_deref(), key);
         self.reply(ctx, make(PacketResult::failed(msg))).await;
         HandleOutcome::Ok
     }
@@ -69,7 +77,11 @@ impl PlayHandler {
             setting: RoomSetting::default(),
             cancel_reason: None,
         };
-        let ev = ctx.server.events.post_mut(events::ROOM_PRE_CREATE, ev).await;
+        let ev = ctx
+            .server
+            .events
+            .post_mut(events::ROOM_PRE_CREATE, ev)
+            .await;
         if let Some(reason) = ev.cancel_reason {
             self.reply(ctx, mk(PacketResult::failed(reason))).await;
             return HandleOutcome::Ok;
@@ -101,17 +113,28 @@ impl PlayHandler {
         crate::room::send_broadcasts(plan).await;
 
         self.last_create = std::time::Instant::now();
-        ctx.server.events.post(events::ROOM_POST_CREATE, events::RoomPostCreateEvent {
-            room: room.clone(),
-            creator: self.player.clone(),
-        }).await;
+        ctx.server
+            .events
+            .post(
+                events::ROOM_POST_CREATE,
+                events::RoomPostCreateEvent {
+                    room: room.clone(),
+                    creator: self.player.clone(),
+                },
+            )
+            .await;
         self.reply(ctx, mk(PacketResult::ok())).await;
         HandleOutcome::Switch(self.room_handler(room))
     }
 
     // ---- 进房 ----
 
-    async fn on_join_room(&mut self, ctx: &HandlerContext, room_id: String, monitor: bool) -> HandleOutcome {
+    async fn on_join_room(
+        &mut self,
+        ctx: &HandlerContext,
+        room_id: String,
+        monitor: bool,
+    ) -> HandleOutcome {
         let i18n = &ctx.server.i18n;
         let lang = self.player.language();
         let mk = |r: PacketResult<JoinRoomData>| ClientBoundPacket::join_room_result(r);
@@ -136,7 +159,11 @@ impl PlayHandler {
             monitor,
             cancel_reason: None,
         };
-        let ev = ctx.server.events.post_mut(events::PLAYER_PRE_JOIN_ROOM, ev).await;
+        let ev = ctx
+            .server
+            .events
+            .post_mut(events::PLAYER_PRE_JOIN_ROOM, ev)
+            .await;
         if let Some(reason) = ev.cancel_reason {
             self.reply(ctx, mk(PacketResult::failed(reason))).await;
             return HandleOutcome::Ok;
@@ -148,7 +175,11 @@ impl PlayHandler {
             room: room.clone(),
             cancel_reason: None,
         };
-        let ev = ctx.server.events.post_mut(events::PLAYER_POST_JOIN_ROOM, ev).await;
+        let ev = ctx
+            .server
+            .events
+            .post_mut(events::PLAYER_POST_JOIN_ROOM, ev)
+            .await;
         if let Some(reason) = ev.cancel_reason {
             self.reply(ctx, mk(PacketResult::failed(reason))).await;
             return HandleOutcome::Ok;
@@ -163,20 +194,28 @@ impl PlayHandler {
             }
         };
         if matches!(outcome, JoinOutcome::AlreadyIn) {
-            self.reply(ctx, mk(PacketResult::Success(room.join_room_data()))).await;
+            self.reply(ctx, mk(PacketResult::Success(room.join_room_data())))
+                .await;
             return HandleOutcome::Ok;
         }
 
         crate::room::send_broadcasts(plan).await;
-        self.reply(ctx, mk(PacketResult::Success(room.join_room_data()))).await;
+        self.reply(ctx, mk(PacketResult::Success(room.join_room_data())))
+            .await;
         if matches!(outcome, JoinOutcome::FirstPlayer) {
             self.reply(ctx, ClientBoundPacket::change_host(true)).await;
         }
 
-        ctx.server.events.post(events::PLAYER_JOIN_ROOM_SUCCESS, events::PlayerJoinRoomSuccessEvent {
-            player: self.player.clone(),
-            room: room.clone(),
-        }).await;
+        ctx.server
+            .events
+            .post(
+                events::PLAYER_JOIN_ROOM_SUCCESS,
+                events::PlayerJoinRoomSuccessEvent {
+                    player: self.player.clone(),
+                    room: room.clone(),
+                },
+            )
+            .await;
 
         HandleOutcome::Switch(self.room_handler(room))
     }
@@ -201,9 +240,9 @@ impl PacketHandler for PlayHandler {
                 ServerBoundPacket::CreateRoom { room_id, .. } => {
                     self.on_create_room(ctx, room_id).await
                 }
-                ServerBoundPacket::JoinRoom { room_id, monitor, .. } => {
-                    self.on_join_room(ctx, room_id, monitor).await
-                }
+                ServerBoundPacket::JoinRoom {
+                    room_id, monitor, ..
+                } => self.on_join_room(ctx, room_id, monitor).await,
                 _ => {
                     // 大厅阶段收到房间操作包 → 踢（对应 Java PlayHandler 无对应 handle 方法）
                     log_debug!(

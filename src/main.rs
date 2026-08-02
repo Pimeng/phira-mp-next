@@ -8,15 +8,15 @@
 //!   且在输入行上方打印、自动重绘提示符——日志不打断输入。
 
 use clap::Parser;
-use phira_mp::server::{run, ServerArgs};
+use phira_mp::server::{ServerArgs, run};
 use std::fmt;
 use terminal_console::ConsoleMakeWriter;
 use tracing::Event;
 use tracing_core::Subscriber;
-use tracing_subscriber::fmt::format::{FormatEvent, FormatFields, Writer};
-use tracing_subscriber::fmt::FmtContext;
-use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::fmt::FmtContext;
+use tracing_subscriber::fmt::format::{FormatEvent, FormatFields, Writer};
+use tracing_subscriber::registry::LookupSpan;
 
 /// 自定义日志格式：`LEVEL hh:mm:ss | target: message`。
 ///
@@ -36,8 +36,8 @@ where
         event: &Event<'_>,
     ) -> fmt::Result {
         let meta = event.metadata();
-        let t = time::OffsetDateTime::now_local()
-            .unwrap_or_else(|_| time::OffsetDateTime::now_utc());
+        let t =
+            time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
         write!(
             writer,
             "{} {:02}:{:02}:{:02} | {}: ",
@@ -54,13 +54,18 @@ where
 
 /// 截取模块路径最后一段（`phira_mp::network::authenticate_handler` → `authenticate_handler`）。
 fn short_target(target: &str) -> &str {
-    target.rsplit_once("::").map(|(_, rest)| rest).unwrap_or(target)
+    target
+        .rsplit_once("::")
+        .map(|(_, rest)| rest)
+        .unwrap_or(target)
 }
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .with_ansi(false) // 颜色交给 terminal-console/crossterm（自动 Windows Win32 回退）
         .event_format(ConsoleFormat)
         .with_writer(ConsoleMakeWriter)

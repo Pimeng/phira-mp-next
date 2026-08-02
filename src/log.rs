@@ -157,8 +157,8 @@ macro_rules! log_trace_global {
 // 导出宏供 crate 内使用（其余宏为完整日志 API，随调用点逐步启用）。
 #[allow(unused_imports)]
 pub(crate) use {
-    log_debug, log_debug_global, log_error, log_error_global, log_impl, log_impl_global,
-    log_info, log_info_global, log_trace, log_trace_global, log_warn, log_warn_global,
+    log_debug, log_debug_global, log_error, log_error_global, log_impl, log_impl_global, log_info,
+    log_info_global, log_trace, log_trace_global, log_warn, log_warn_global,
 };
 
 #[cfg(test)]

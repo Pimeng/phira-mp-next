@@ -15,11 +15,11 @@ use crate::network::{HANDSHAKE_TIMEOUT, PROTOCOL_VERSION, READ_TIMEOUT};
 use crate::packet::clientbound::{ClientBoundPacket, SharedFrame};
 use crate::packet::serverbound::ServerBoundPacket;
 use ::bytes::Bytes;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, Mutex, Notify};
+use tokio::sync::{Mutex, Notify, mpsc};
 use tokio::time::timeout;
 
 /// 断开原因（5.4 节 DisconnectReason）。
@@ -205,7 +205,11 @@ pub async fn spawn_connection(
     let version = match read_version(&mut stream, &mut pending).await {
         Ok(v) => v,
         Err(e) => {
-            log_debug!(&ctx.i18n, "LOG_CONN_HANDSHAKE_FAILED", ("err", e.to_string()));
+            log_debug!(
+                &ctx.i18n,
+                "LOG_CONN_HANDSHAKE_FAILED",
+                ("err", e.to_string())
+            );
             return;
         }
     };
@@ -227,7 +231,9 @@ pub async fn spawn_connection(
         close_notify: Notify::new(),
         peer_addr: Mutex::new(real_peer.clone()),
     });
-    let conn = ConnectionHandle { inner: inner.clone() };
+    let conn = ConnectionHandle {
+        inner: inner.clone(),
+    };
 
     let (mut read_half, mut write_half) = stream.into_split();
 
@@ -238,7 +244,11 @@ pub async fn spawn_connection(
         loop {
             match rx.recv().await {
                 Some(WriterMsg::Frame(data)) => {
-                    log_trace!(&writer_ctx.i18n, "LOG_CONN_WRITER_FRAME", ("bytes", data.len()));
+                    log_trace!(
+                        &writer_ctx.i18n,
+                        "LOG_CONN_WRITER_FRAME",
+                        ("bytes", data.len())
+                    );
                     if write_half.write_all(&data).await.is_err() {
                         break;
                     }
@@ -334,17 +344,22 @@ pub async fn spawn_connection(
     // PlayerDisconnectEvent → 换绑跳过 → 未入房移除 → Monitor 离开 → 可挂起则挂起。
     let reason = conn.disconnect_reason();
     if let Some(h) = handler.as_ref()
-        && let Some(player) = h.player_ref() {
-            let room = h.room_ref();
-            let suspendable = h.is_suspendable_room_holder();
-            // disconnect_override：注册后完全接管断线处理（自定义玩家宿主用）
-            let override_handler = ctx.extensions.disconnect_override.read().unwrap().clone();
-            match override_handler {
-                Some(f) => f(ctx.clone(), conn.clone(), player, room, suspendable, reason).await,
-                None => on_connection_closed(&ctx, &conn, &player, room, suspendable, reason).await,
-            }
+        && let Some(player) = h.player_ref()
+    {
+        let room = h.room_ref();
+        let suspendable = h.is_suspendable_room_holder();
+        // disconnect_override：注册后完全接管断线处理（自定义玩家宿主用）
+        let override_handler = ctx.extensions.disconnect_override.read().unwrap().clone();
+        match override_handler {
+            Some(f) => f(ctx.clone(), conn.clone(), player, room, suspendable, reason).await,
+            None => on_connection_closed(&ctx, &conn, &player, room, suspendable, reason).await,
         }
-    log_info!(&ctx.i18n, "LOG_CONN_CLOSED", ("reason", format!("{reason:?}")));
+    }
+    log_info!(
+        &ctx.i18n,
+        "LOG_CONN_CLOSED",
+        ("reason", format!("{reason:?}"))
+    );
 }
 
 /// 断线清理（5.3/5.4 节；对应 Java onClose 回调链）。
@@ -362,7 +377,10 @@ async fn on_connection_closed(
         reason,
         cancel_reason: None,
     };
-    let ev = ctx.events.post_mut(crate::events::PLAYER_DISCONNECT, ev).await;
+    let ev = ctx
+        .events
+        .post_mut(crate::events::PLAYER_DISCONNECT, ev)
+        .await;
     if ev.is_cancelled() {
         // 订阅者已接管清理，默认流程不再执行
         return;
@@ -419,7 +437,12 @@ async fn on_connection_closed(
     let remover = move || {
         ctx2.players.remove_if_bound(uid, &conn2);
     };
-    if ctx.sessions.suspend(player.clone(), room, remover).await.is_err() {
+    if ctx
+        .sessions
+        .suspend(player.clone(), room, remover)
+        .await
+        .is_err()
+    {
         ctx.players.remove_if_bound(player.id(), conn);
         player.on_session_closed(reason);
         unregister_notify(ctx, player).await;
@@ -430,7 +453,10 @@ async fn on_connection_closed(
 }
 
 /// 玩家从注册表移除后发 `PLAYER_UNREGISTER`（观察事件）。
-async fn unregister_notify(ctx: &Arc<crate::server::ServerContext>, player: &Arc<dyn crate::player::Player>) {
+async fn unregister_notify(
+    ctx: &Arc<crate::server::ServerContext>,
+    player: &Arc<dyn crate::player::Player>,
+) {
     ctx.events
         .post(
             crate::events::PLAYER_UNREGISTER,
@@ -450,7 +476,11 @@ async fn dispatch(
     let packet = match ServerBoundPacket::decode_frame(&frame) {
         Ok(p) => p,
         Err(e) => {
-            log_debug!(&ctx.server.i18n, "LOG_CONN_DECODE_ERROR", ("err", e.to_string()));
+            log_debug!(
+                &ctx.server.i18n,
+                "LOG_CONN_DECODE_ERROR",
+                ("err", e.to_string())
+            );
             return false; // 未知包/解码失败 → 关闭连接
         }
     };
