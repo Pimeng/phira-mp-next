@@ -27,6 +27,7 @@ jobs:
             platform: linux-arm64
             bin: phira-mp
             apt-packages: gcc-aarch64-linux-gnu
+            linker: aarch64-linux-gnu-gcc
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             platform: windows-x64
@@ -68,11 +69,13 @@ jobs:
         if: matrix.zigbuild
         uses: goto-bus-stop/setup-zig@v2
         with:
-          version: 0.13.0
+          # zig 0.13 对 Android (bionic) libc 头文件支持不完整，
+          # 编译 ring 等含 C 代码的依赖会报 assert.h not found；0.14.0+ 已修复
+          version: 0.14.0
 
       - name: Install cargo-zigbuild
         if: matrix.zigbuild
-        run: pip install --break-system-packages cargo-zigbuild
+        run: pip install --break-system-packages -U cargo-zigbuild
 
       - name: Get version from Cargo.toml
         id: version
@@ -84,6 +87,11 @@ jobs:
       - name: Build release binary
         shell: bash
         run: |
+          # 交叉编译目标显式指定链接器，避免 rustc 回退到 host 的 cc/rust-lld
+          # （否则链接 aarch64 对象文件时报 incompatible with elf64-x86-64）
+          if [ -n "${{ matrix.linker }}" ]; then
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="${{ matrix.linker }}"
+          fi
           if [ "${{ matrix.zigbuild }}" = "true" ]; then
             cargo zigbuild --release --target ${{ matrix.target }}
           else
