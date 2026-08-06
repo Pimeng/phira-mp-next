@@ -23,6 +23,7 @@
 pub mod ban;
 pub mod bytes;
 pub mod command;
+pub mod config;
 pub mod eventbus;
 pub mod events;
 pub mod float16;

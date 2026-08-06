@@ -396,12 +396,11 @@ pub async fn start_server(phira_addr: &str) -> (Arc<phira_mp::server::ServerCont
     let args = ServerArgs {
         port: 0,
         host: "127.0.0.1".into(),
-        proxy_protocol: false,
         http_port: 0,
         language: "zh-CN".into(),
         session_timeout: 300,
         phira_api: format!("http://{phira_addr}/"),
-        record_dir: None,
+        ..Default::default()
     };
     tokio::spawn(async move {
         let _ = run(args).await;

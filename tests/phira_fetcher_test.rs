@@ -3,7 +3,7 @@
 //! 覆盖：/me /chart /record /user 成功路径、TTL 缓存命中（不发第二次请求）、
 //! 404 快速失败、5xx 重试（一次失败后成功 / 持续失败）、坏 JSON。
 
-use phira_mp::phira::{PhiraError, PhiraFetcher};
+use phira_mp::phira::{PhiraError, PhiraFetcher, PhiraFetcherConfig};
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -149,7 +149,10 @@ fn respond(path: &str, token: Option<&str>, script: &Script) -> (&'static str, S
 }
 
 async fn fetcher_for(api: &MockApi) -> PhiraFetcher {
-    PhiraFetcher::new(format!("http://{}/", api.addr))
+    PhiraFetcher::new(PhiraFetcherConfig {
+        api_url: format!("http://{}/", api.addr),
+        ..Default::default()
+    })
 }
 
 #[tokio::test]
@@ -288,7 +291,10 @@ async fn persistent_5xx_fails_after_retries() {
 #[tokio::test]
 async fn network_error_fails() {
     // 指向一个不存在的端口 → 连接失败 → 重试后 Http 错误
-    let f = PhiraFetcher::new("http://127.0.0.1:1/");
+    let f = PhiraFetcher::new(PhiraFetcherConfig {
+        api_url: "http://127.0.0.1:1/".into(),
+        ..Default::default()
+    });
     let err = f.get_user_info("tok-1").await.unwrap_err();
     assert!(matches!(err, PhiraError::Http(_)));
 }

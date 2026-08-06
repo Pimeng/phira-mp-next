@@ -208,14 +208,11 @@ mod tests {
     async fn resolve_or_resume_returns_suspended_room() {
         // 需要全局 ctx（sessions 从全局取）；构造最小 ServerContext。
         let ctx = crate::server::ServerContext::new(crate::server::ServerArgs {
-            port: 0,
             host: "127.0.0.1".into(),
-            proxy_protocol: false,
-            http_port: 0,
             language: "zh-CN".into(),
             session_timeout: 300,
             phira_api: "http://127.0.0.1:1/".into(),
-            record_dir: None,
+            ..Default::default()
         });
         let registry = PlayerRegistry::new();
         let player = make_player(7);

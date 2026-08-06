@@ -11,7 +11,7 @@
 use crate::frame::FrameDecoder;
 use crate::log::{log_debug, log_info, log_trace, log_warn};
 use crate::network::handler::{HandleOutcome, HandlerContext, PacketHandler};
-use crate::network::{HANDSHAKE_TIMEOUT, PROTOCOL_VERSION, READ_TIMEOUT};
+use crate::network::PROTOCOL_VERSION;
 use crate::packet::clientbound::{ClientBoundPacket, SharedFrame};
 use crate::packet::serverbound::ServerBoundPacket;
 use ::bytes::Bytes;
@@ -187,7 +187,12 @@ pub async fn spawn_connection(
     let mut pending: Vec<u8> = Vec::new();
     let mut real_peer = peer.clone();
     if proxy_protocol {
-        match crate::network::proxy::parse_proxy(&mut stream).await {
+        match crate::network::proxy::parse_proxy(
+            &mut stream,
+            std::time::Duration::from_secs(ctx.args.proxy_timeout),
+        )
+        .await
+        {
             Ok(res) => {
                 if let Some(addr) = res.real_addr {
                     real_peer = addr.to_string();
@@ -202,7 +207,13 @@ pub async fn spawn_connection(
     }
 
     // 2. 握手：读 1 字节协议版本（先消费 pending）
-    let version = match read_version(&mut stream, &mut pending).await {
+    let version = match read_version(
+        &mut stream,
+        &mut pending,
+        std::time::Duration::from_secs(ctx.args.handshake_timeout),
+    )
+    .await
+    {
         Ok(v) => v,
         Err(e) => {
             log_debug!(
@@ -313,7 +324,11 @@ pub async fn spawn_connection(
             }
         }
 
-        let read = timeout(READ_TIMEOUT, read_half.read(&mut read_buf)).await;
+        let read = timeout(
+            std::time::Duration::from_secs(ctx.args.read_timeout),
+            read_half.read(&mut read_buf),
+        )
+        .await;
         match read {
             Ok(Ok(0)) => break, // EOF
             Ok(Ok(n)) => {
@@ -537,13 +552,17 @@ async fn dispatch(
     }
 }
 
-/// 读 1 字节协议版本：先消费 pending，再读 socket，5 秒超时。
-async fn read_version(stream: &mut TcpStream, pending: &mut Vec<u8>) -> std::io::Result<u8> {
+/// 读 1 字节协议版本：先消费 pending，再读 socket（超时由配置决定）。
+async fn read_version(
+    stream: &mut TcpStream,
+    pending: &mut Vec<u8>,
+    handshake_timeout: std::time::Duration,
+) -> std::io::Result<u8> {
     if !pending.is_empty() {
         return Ok(pending.remove(0));
     }
     let mut b = [0u8; 1];
-    timeout(HANDSHAKE_TIMEOUT, stream.read_exact(&mut b))
+    timeout(handshake_timeout, stream.read_exact(&mut b))
         .await
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "handshake timeout"))??;
     Ok(b[0])

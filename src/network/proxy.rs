@@ -3,11 +3,10 @@
 //! 需回灌给握手阶段。
 
 use std::net::SocketAddr;
+use std::time::Duration;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tokio::time::timeout;
-
-const PROXY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// PROXY 解析结果。
 pub struct ProxyResult {
@@ -20,8 +19,8 @@ pub struct ProxyResult {
 /// v2 签名：\r\n\r\n\0\r\nQUIT\n
 const V2_SIG: &[u8] = b"\r\n\r\n\x00\r\nQUIT\n";
 
-pub async fn parse_proxy(stream: &mut TcpStream) -> std::io::Result<ProxyResult> {
-    timeout(PROXY_TIMEOUT, parse_inner(stream))
+pub async fn parse_proxy(stream: &mut TcpStream, timeout_dur: Duration) -> std::io::Result<ProxyResult> {
+    timeout(timeout_dur, parse_inner(stream))
         .await
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "proxy protocol timeout"))?
 }

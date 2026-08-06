@@ -647,14 +647,11 @@ mod tests {
     /// 独立 ServerContext（不启动网络；GLOBAL_CTX 被覆盖不影响本测试，均不依赖它）。
     fn ctx() -> Arc<ServerContext> {
         ServerContext::new(ServerArgs {
-            port: 0,
             host: "127.0.0.1".into(),
-            proxy_protocol: false,
-            http_port: 0,
             language: "zh-CN".into(),
             session_timeout: 300,
             phira_api: "http://127.0.0.1/".into(),
-            record_dir: None,
+            ..Default::default()
         })
     }
 

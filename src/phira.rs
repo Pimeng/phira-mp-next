@@ -5,18 +5,62 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// 缓存配置（与 Java 版一致）。
-const TOKEN_CACHE_TTL: Duration = Duration::from_secs(600); // 10min
-const TOKEN_CACHE_CAP: usize = 10000;
-const USER_CACHE_TTL: Duration = Duration::from_secs(600);
-const USER_CACHE_CAP: usize = 5000;
-const CHART_CACHE_TTL: Duration = Duration::from_secs(1800); // 30min
-const CHART_CACHE_CAP: usize = 10000;
-const RECORD_CACHE_TTL: Duration = Duration::from_secs(1800);
-const RECORD_CACHE_CAP: usize = 50000;
+use crate::server::ServerArgs;
 
-const MAX_ATTEMPTS: u32 = 5;
-const RETRY_BASE_MS: u64 = 150;
+/// Phira API 客户端调优参数（来自 config.yml / CLI）。
+#[derive(Debug, Clone)]
+pub struct PhiraFetcherConfig {
+    /// Phira API Base URL。
+    pub api_url: String,
+    /// GET 请求最大尝试次数。
+    pub max_attempts: u32,
+    /// 重试退避基数（毫秒，退避 = base × attempt）。
+    pub retry_base_ms: u64,
+    pub token_cache_ttl: Duration,
+    pub token_cache_cap: usize,
+    pub user_cache_ttl: Duration,
+    pub user_cache_cap: usize,
+    pub chart_cache_ttl: Duration,
+    pub chart_cache_cap: usize,
+    pub record_cache_ttl: Duration,
+    pub record_cache_cap: usize,
+}
+
+impl Default for PhiraFetcherConfig {
+    fn default() -> Self {
+        Self {
+            api_url: "https://phira.5wyxi.com/".into(),
+            max_attempts: 5,
+            retry_base_ms: 150,
+            token_cache_ttl: Duration::from_secs(600), // 10min
+            token_cache_cap: 10000,
+            user_cache_ttl: Duration::from_secs(600),
+            user_cache_cap: 5000,
+            chart_cache_ttl: Duration::from_secs(1800), // 30min
+            chart_cache_cap: 10000,
+            record_cache_ttl: Duration::from_secs(1800),
+            record_cache_cap: 50000,
+        }
+    }
+}
+
+impl From<&ServerArgs> for PhiraFetcherConfig {
+    fn from(args: &ServerArgs) -> Self {
+        Self {
+            api_url: args.phira_api.clone(),
+            max_attempts: args.phira_max_attempts,
+            retry_base_ms: args.phira_retry_base_ms,
+            token_cache_ttl: Duration::from_secs(args.phira_token_cache_ttl),
+            token_cache_cap: args.phira_token_cache_cap,
+            user_cache_ttl: Duration::from_secs(args.phira_user_cache_ttl),
+            user_cache_cap: args.phira_user_cache_cap,
+            chart_cache_ttl: Duration::from_secs(args.phira_chart_cache_ttl),
+            chart_cache_cap: args.phira_chart_cache_cap,
+            record_cache_ttl: Duration::from_secs(args.phira_record_cache_ttl),
+            record_cache_cap: args.phira_record_cache_cap,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
@@ -114,6 +158,8 @@ impl<K: std::hash::Hash + Eq + Clone, V: Clone> TtlCache<K, V> {
 pub struct PhiraFetcher {
     client: reqwest::Client,
     base_url: String,
+    max_attempts: u32,
+    retry_base_ms: u64,
     token_cache: Mutex<TtlCache<String, Arc<UserInfo>>>,
     user_cache: Mutex<TtlCache<i32, Arc<UserInfo>>>,
     chart_cache: Mutex<TtlCache<i32, Arc<ChartInfo>>>,
@@ -121,7 +167,7 @@ pub struct PhiraFetcher {
 }
 
 impl PhiraFetcher {
-    pub fn new(base_url: impl Into<String>) -> Self {
+    pub fn new(config: PhiraFetcherConfig) -> Self {
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(10))
@@ -130,11 +176,19 @@ impl PhiraFetcher {
             .expect("reqwest client");
         Self {
             client,
-            base_url: base_url.into(),
-            token_cache: Mutex::new(TtlCache::new(TOKEN_CACHE_TTL, TOKEN_CACHE_CAP)),
-            user_cache: Mutex::new(TtlCache::new(USER_CACHE_TTL, USER_CACHE_CAP)),
-            chart_cache: Mutex::new(TtlCache::new(CHART_CACHE_TTL, CHART_CACHE_CAP)),
-            record_cache: Mutex::new(TtlCache::new(RECORD_CACHE_TTL, RECORD_CACHE_CAP)),
+            base_url: config.api_url,
+            max_attempts: config.max_attempts,
+            retry_base_ms: config.retry_base_ms,
+            token_cache: Mutex::new(TtlCache::new(
+                config.token_cache_ttl,
+                config.token_cache_cap,
+            )),
+            user_cache: Mutex::new(TtlCache::new(config.user_cache_ttl, config.user_cache_cap)),
+            chart_cache: Mutex::new(TtlCache::new(config.chart_cache_ttl, config.chart_cache_cap)),
+            record_cache: Mutex::new(TtlCache::new(
+                config.record_cache_ttl,
+                config.record_cache_cap,
+            )),
         }
     }
 
@@ -150,7 +204,7 @@ impl PhiraFetcher {
     ) -> Result<T, PhiraError> {
         let url = self.url(path);
         let mut last_err = String::new();
-        for attempt in 0..MAX_ATTEMPTS {
+        for attempt in 0..self.max_attempts {
             let mut req = self.client.get(&url).header("Accept", "application/json");
             if let Some(t) = token {
                 req = req.bearer_auth(t);
@@ -193,7 +247,10 @@ impl PhiraFetcher {
                 ("path", path),
                 ("attempt", attempt),
             );
-            tokio::time::sleep(Duration::from_millis(RETRY_BASE_MS * (attempt as u64 + 1))).await;
+            tokio::time::sleep(Duration::from_millis(
+                self.retry_base_ms * (attempt as u64 + 1),
+            ))
+            .await;
         }
         Err(PhiraError::Http(last_err))
     }

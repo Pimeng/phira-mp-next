@@ -15,8 +15,4 @@ pub mod room_handler;
 /// 协议版本（仅 0x01 受支持）。
 pub const PROTOCOL_VERSION: u8 = 0x01;
 
-/// 握手/读取超时。
-pub const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-pub const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-
 pub use connection::{ConnectionHandle, spawn_connection};

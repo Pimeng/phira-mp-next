@@ -74,7 +74,10 @@ impl PlayHandler {
         let ev = events::RoomPreCreateEvent {
             creator: self.player.clone(),
             room_id: room_id.clone(),
-            setting: RoomSetting::default(),
+            setting: RoomSetting {
+                max_player: ctx.server.args.default_max_player,
+                ..Default::default()
+            },
             cancel_reason: None,
         };
         let ev = ctx

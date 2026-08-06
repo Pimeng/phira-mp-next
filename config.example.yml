@@ -1,0 +1,49 @@
+# =====================================================================
+# phira-mp 配置文件示例
+#
+# 使用方式：
+#   1. 复制本文件为 config.yml（服务器启动时自动从工作目录加载）
+#   2. 按需修改；全部字段可选，缺省使用内置默认值
+#
+# 加载优先级：命令行参数 > config.yml > 内置默认值
+#   - 例：config.yml 里 port: 20000，命令行又传 --port 30000，最终用 30000
+#   - 配置文件不存在时静默使用内置默认值
+#   - 配置文件语法错误或出现未知键（拼错）会启动失败
+#
+# 对应命令行参数见: phira-mp --help
+# =====================================================================
+
+# ---- 服务器基础 ----
+server:
+  host: 0.0.0.0           # 监听地址（--host）
+  port: 12346             # 游戏端口（--port）
+  http_port: 12347        # HTTP 查询 API 端口，0 = 禁用（--http-port）
+  proxy_protocol: false   # 启用 HAProxy PROXY 协议，Nginx/HAProxy 前置时开启（--proxy-protocol）
+  language: zh-CN         # 服务器默认语言（--language）
+  session_timeout: 300    # 会话挂起超时，秒，掉线不掉房（--session-timeout）
+  record_dir: null        # 对局录制输出目录，null = 禁用；如 "records"（--record-dir）
+
+# ---- Phira API 客户端 ----
+phira:
+  api: "https://phira.5wyxi.com/"   # Phira API Base URL（--phira-api）
+  max_attempts: 5                   # GET 请求最大尝试次数（--phira-max-attempts）
+  retry_base_ms: 150                # 重试退避基数（毫秒），退避 = base × attempt（--phira-retry-base-ms）
+  cache:
+    token_ttl: 600      # token → 用户缓存 TTL，秒（--phira-token-cache-ttl）
+    token_cap: 10000    # token 缓存容量（--phira-token-cache-cap）
+    user_ttl: 600       # 用户信息缓存 TTL，秒（--phira-user-cache-ttl）
+    user_cap: 5000      # 用户信息缓存容量（--phira-user-cache-cap）
+    chart_ttl: 1800     # 谱面缓存 TTL，秒（--phira-chart-cache-ttl）
+    chart_cap: 10000    # 谱面缓存容量（--phira-chart-cache-cap）
+    record_ttl: 1800    # 成绩缓存 TTL，秒（--phira-record-cache-ttl）
+    record_cap: 50000   # 成绩缓存容量（--phira-record-cache-cap）
+
+# ---- 网络超时（秒）----
+network:
+  handshake_timeout: 5  # 握手超时（--handshake-timeout）
+  read_timeout: 5       # 读帧超时（--read-timeout）
+  proxy_timeout: 5      # PROXY 协议解析超时（--proxy-timeout）
+
+# ---- 房间 ----
+room:
+  default_max_player: 8 # 新建房间默认最大人数（--default-max-player）

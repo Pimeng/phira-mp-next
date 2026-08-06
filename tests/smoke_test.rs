@@ -298,7 +298,7 @@ async fn start_server(
         language: "zh-CN".into(),
         session_timeout: 300,
         phira_api: format!("http://{phira_addr}/"),
-        record_dir: None,
+        ..Default::default()
     };
     tokio::spawn(async move {
         let _ = run(args).await;

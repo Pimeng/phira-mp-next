@@ -7,7 +7,6 @@
 //! - `ConsoleMakeWriter`：日志经 crossterm 重上色（无 VT 时自动回退 Win32 API），
 //!   且在输入行上方打印、自动重绘提示符——日志不打断输入。
 
-use clap::Parser;
 use phira_mp::server::{ServerArgs, run};
 use std::fmt;
 use terminal_console::ConsoleMakeWriter;
@@ -71,6 +70,6 @@ async fn main() -> std::io::Result<()> {
         .with_writer(ConsoleMakeWriter)
         .init();
 
-    let args = ServerArgs::parse();
+    let args = ServerArgs::load()?;
     run(args).await
 }
