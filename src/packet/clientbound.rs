@@ -102,7 +102,8 @@ impl DecodeSized for JoinRoomData {
     fn decode_sized(buf: &mut impl Buf) -> Result<Self, CodecError> {
         let game_state = <GameState as Decode>::decode(buf)?;
         let count = bytes::read_varint(buf)?;
-        let mut users = Vec::with_capacity(count.max(0) as usize);
+        // The count is wire data; only grow for successfully decoded users.
+        let mut users = Vec::new();
         for _ in 0..count {
             users.push(crate::bytes::Decode::decode(buf)?);
         }
@@ -243,7 +244,8 @@ impl ClientBoundPacket {
             0x03 => {
                 let from_player_id = bytes::read_i32(&mut buf)?;
                 let count = bytes::read_varint(&mut buf)?;
-                let mut frames = Vec::with_capacity(count.max(0) as usize);
+                // Do not reserve an attacker-controlled wire count up front.
+                let mut frames = Vec::new();
                 for _ in 0..count {
                     frames.push(Decode::decode(&mut buf)?);
                 }
@@ -256,7 +258,7 @@ impl ClientBoundPacket {
             0x04 => {
                 let from_player_id = bytes::read_i32(&mut buf)?;
                 let count = bytes::read_varint(&mut buf)?;
-                let mut judges = Vec::with_capacity(count.max(0) as usize);
+                let mut judges = Vec::new();
                 for _ in 0..count {
                     judges.push(Decode::decode(&mut buf)?);
                 }

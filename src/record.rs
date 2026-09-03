@@ -135,7 +135,9 @@ fn read_list<T: Decode>(buf: &mut impl Buf) -> Result<Vec<T>, bytes::CodecError>
     if count < 0 {
         return Err(bytes::CodecError::BadStringLength(count));
     }
-    let mut out = Vec::with_capacity(count as usize);
+    // The count comes from the record bytes; decode incrementally instead of
+    // reserving an attacker-controlled capacity up front.
+    let mut out = Vec::new();
     for _ in 0..count {
         out.push(T::decode(buf)?);
     }

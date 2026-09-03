@@ -102,7 +102,8 @@ impl Decode for RoomInfo {
         let is_host = bytes::read_bool(buf)?;
         let is_ready = bytes::read_bool(buf)?;
         let count = bytes::read_varint(buf)?;
-        let mut users = Vec::with_capacity(count.max(0) as usize);
+        // The count is wire data; avoid reserving it before decoding elements.
+        let mut users = Vec::new();
         for _ in 0..count {
             let _redundant_user_id = bytes::read_i32(buf)?; // 丢弃
             users.push(FullUserProfile::decode(buf)?);
@@ -204,7 +205,8 @@ impl Decode for TouchFrame {
     fn decode(buf: &mut impl Buf) -> Result<Self, CodecError> {
         let time = bytes::read_f32(buf)?;
         let count = bytes::read_varint(buf)?;
-        let mut points = Vec::with_capacity(count.max(0) as usize);
+        // This list is nested in unauthenticated Touches packets.
+        let mut points = Vec::new();
         for _ in 0..count {
             points.push(TouchPoint::decode(buf)?);
         }

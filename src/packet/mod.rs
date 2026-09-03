@@ -38,7 +38,9 @@ pub fn read_list<T: Decode>(buf: &mut impl Buf) -> Result<Vec<T>, CodecError> {
     if count < 0 {
         return Err(CodecError::BadStringLength(count));
     }
-    let mut out = Vec::with_capacity(count as usize);
+    // The count is input-controlled. Decode incrementally instead of reserving
+    // a potentially enormous capacity before the first element is validated.
+    let mut out = Vec::new();
     for _ in 0..count {
         out.push(T::decode(buf)?);
     }

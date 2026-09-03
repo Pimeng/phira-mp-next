@@ -85,7 +85,9 @@ impl ServerBoundPacket {
             },
             0x03 => {
                 let count = bytes::read_varint(&mut buf)?;
-                let mut frames = Vec::with_capacity(count.max(0) as usize);
+                // The count is peer-controlled. Grow only for successfully
+                // decoded frames so malformed packets cannot reserve huge memory.
+                let mut frames = Vec::new();
                 for _ in 0..count {
                     frames.push(crate::bytes::Decode::decode(&mut buf)?);
                 }
@@ -96,7 +98,8 @@ impl ServerBoundPacket {
             }
             0x04 => {
                 let count = bytes::read_varint(&mut buf)?;
-                let mut judges = Vec::with_capacity(count.max(0) as usize);
+                // The count is peer-controlled; do not reserve it up front.
+                let mut judges = Vec::new();
                 for _ in 0..count {
                     judges.push(crate::bytes::Decode::decode(&mut buf)?);
                 }
@@ -303,5 +306,21 @@ mod tests {
     #[test]
     fn unknown_id_fails() {
         assert!(ServerBoundPacket::decode_frame(&[0x7F]).is_err());
+    }
+
+    #[test]
+    fn malicious_list_counts_do_not_reserve_unbounded_memory() {
+        // i32::MAX encoded as a VarInt, with no element bytes.  Decoding must
+        // fail before attempting to reserve space for 2_147_483_647 frames.
+        assert!(ServerBoundPacket::decode_frame(&[0x03, 0xff, 0xff, 0xff, 0xff, 0x07,]).is_err());
+
+        // The nested TouchFrame point list is another untrusted count.
+        let mut nested = vec![0x03, 0x01]; // Touches with one frame
+        nested.extend_from_slice(&[0; 4]); // frame time
+        nested.extend_from_slice(&[0xff, 0xff, 0xff, 0xff, 0x07]);
+        assert!(ServerBoundPacket::decode_frame(&nested).is_err());
+
+        // Judges has the same outer-list allocation hazard.
+        assert!(ServerBoundPacket::decode_frame(&[0x04, 0xff, 0xff, 0xff, 0xff, 0x07,]).is_err());
     }
 }
