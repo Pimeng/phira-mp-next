@@ -10,8 +10,8 @@
 
 use crate::frame::FrameDecoder;
 use crate::log::{log_debug, log_info, log_trace, log_warn};
-use crate::network::handler::{HandleOutcome, HandlerContext, PacketHandler};
 use crate::network::PROTOCOL_VERSION;
+use crate::network::handler::{HandleOutcome, HandlerContext, PacketHandler};
 use crate::packet::clientbound::{ClientBoundPacket, SharedFrame};
 use crate::packet::serverbound::ServerBoundPacket;
 use ::bytes::Bytes;

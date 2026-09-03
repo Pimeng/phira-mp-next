@@ -7,8 +7,8 @@
 //!
 //! 参考示例见仓库根目录 `config.example.yml`。
 
-use clap::parser::ValueSource;
 use clap::ArgMatches;
+use clap::parser::ValueSource;
 use serde::Deserialize;
 
 use crate::server::ServerArgs;
@@ -115,8 +115,9 @@ impl ServerConfig {
             }
             Err(e) => return Err(e),
         };
-        serde_yml::from_str(&text)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{path}: {e}")))
+        serde_yml::from_str(&text).map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{path}: {e}"))
+        })
     }
 
     /// 将配置文件值合并进 CLI 参数：
@@ -148,7 +149,11 @@ impl ServerConfig {
         let room = &self.room;
 
         ServerArgs {
-            host: pick!("host", cli.host, server.as_ref().and_then(|s| s.host.clone())),
+            host: pick!(
+                "host",
+                cli.host,
+                server.as_ref().and_then(|s| s.host.clone())
+            ),
             port: pick!("port", cli.port, server.as_ref().and_then(|s| s.port)),
             http_port: pick!(
                 "http_port",

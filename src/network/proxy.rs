@@ -19,7 +19,10 @@ pub struct ProxyResult {
 /// v2 签名：\r\n\r\n\0\r\nQUIT\n
 const V2_SIG: &[u8] = b"\r\n\r\n\x00\r\nQUIT\n";
 
-pub async fn parse_proxy(stream: &mut TcpStream, timeout_dur: Duration) -> std::io::Result<ProxyResult> {
+pub async fn parse_proxy(
+    stream: &mut TcpStream,
+    timeout_dur: Duration,
+) -> std::io::Result<ProxyResult> {
     timeout(timeout_dur, parse_inner(stream))
         .await
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "proxy protocol timeout"))?

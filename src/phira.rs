@@ -184,7 +184,10 @@ impl PhiraFetcher {
                 config.token_cache_cap,
             )),
             user_cache: Mutex::new(TtlCache::new(config.user_cache_ttl, config.user_cache_cap)),
-            chart_cache: Mutex::new(TtlCache::new(config.chart_cache_ttl, config.chart_cache_cap)),
+            chart_cache: Mutex::new(TtlCache::new(
+                config.chart_cache_ttl,
+                config.chart_cache_cap,
+            )),
             record_cache: Mutex::new(TtlCache::new(
                 config.record_cache_ttl,
                 config.record_cache_cap,
