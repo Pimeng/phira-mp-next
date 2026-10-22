@@ -89,8 +89,28 @@ room:
 ## 测试
 
 ```bash
-cargo test
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-targets --all-features
 ```
+
+Nightly Build 在构建前执行以上检查与测试。
+
+## 代码结构
+
+| 目录 / 模块 | 职责 |
+| --- | --- |
+| `src/server/` | 参数加载、依赖装配、扩展点与服务启停 |
+| `src/network/` | 连接、认证、大厅操作与房间内的协议处理 |
+| `src/room/` | 房间成员、状态机、设置及广播计划 |
+| `src/player/` | 玩家接口、本地连接、注册与可替换数据源 |
+| `src/command/` | 终端接入、命令解析与按用途分组的命令 |
+| `src/packet/` | 协议包与数据结构的编解码 |
+| `src/session.rs` | 断线会话挂起、恢复与超时清理 |
+| `terminal-console/` | 独立的终端输入与日志渲染库 |
+| `tests/` | 协议、房间、会话、HTTP 与完整服务端回归测试 |
+
+阅读入口、模块边界及修改注意事项见 [架构说明](docs/architecture.md)。
 
 ## 致谢
 
